@@ -27,6 +27,19 @@ from .parsing import (
 from .schema import ENTITIES, Kind
 
 _ID_CLEAN_RE = re.compile(r"\.0$")
+_MISSING_TOKENS = {"nan", "none", "null", "n/a", "na", "#n/a", "-", ""}
+
+
+def _text(value: Any) -> str | None:
+    """Coerce a cell to clean text, or to None. Never yields the string "nan"."""
+    if value is None:
+        return None
+    if isinstance(value, float) and np.isnan(value):
+        return None
+    text = str(value).strip()
+    if text.lower() in _MISSING_TOKENS:
+        return None
+    return text
 
 
 @dataclass
@@ -106,13 +119,9 @@ def apply_mapping(frame: pd.DataFrame, entity_name: str,
             else:
                 out[canonical] = column.map(normalise_label)
         elif spec.kind is Kind.EMAIL:
-            out[canonical] = column.map(
-                lambda v: str(v).strip().lower() if v is not None and str(v).strip() else None
-            )
+            out[canonical] = column.map(lambda v: (_text(v) or "").lower() or None)
         else:
-            out[canonical] = column.map(
-                lambda v: str(v).strip() if v is not None and str(v).strip() else None
-            )
+            out[canonical] = column.map(_text)
 
     for name in fields:
         if name not in out.columns:

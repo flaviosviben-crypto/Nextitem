@@ -113,6 +113,34 @@ class TestReadTable:
         assert "b" in report.dropped_empty_columns
         assert list(frame.columns) == ["a", "c"]
 
+    def test_a_row_wider_than_the_header_is_kept_not_dropped(self):
+        """An unquoted delimiter inside a value must not destroy the file.
+
+        Regression: pandas' on_bad_lines="skip" silently discarded every row
+        wider than the header, leaving a file with almost no data and no warning.
+        """
+        raw = (
+            "codice;nome;taglie;note\n"
+            "A1;Rossi;M; 40;prima nota\n"      # an extra ';' inside "taglie"
+            "A2;Bianchi;L; 43;\n"
+            "A3;Conti;S;terza nota\n"
+        ).encode()
+        frame, report = read_table(raw, "ragged.csv")
+
+        assert len(frame) == 3, "no row may be dropped without being reported"
+        assert frame["codice"].tolist() == ["A1", "A2", "A3"]
+        assert frame["nome"].tolist() == ["Rossi", "Bianchi", "Conti"]
+        # the overflow lands in a named extra column rather than shifting values
+        assert any(c.startswith("column_") for c in frame.columns)
+        assert any("more values than the header" in w for w in report.warnings)
+
+    def test_short_rows_are_padded_not_shifted(self):
+        raw = b"a,b,c\n1,2,3\n4,5\n"
+        frame, _ = read_table(raw, "short.csv")
+        assert len(frame) == 2
+        assert frame["a"].tolist() == ["1", "4"]
+        assert frame["b"].tolist() == ["2", "5"]
+
     def test_empty_file_raises_a_clear_error(self):
         with pytest.raises(IngestionError):
             read_table(b"", "empty.csv")

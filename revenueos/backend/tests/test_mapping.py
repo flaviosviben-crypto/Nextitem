@@ -209,6 +209,24 @@ class TestCleaning:
         clean, _ = apply_mapping(frame, "inventory", result.as_field_map())
         assert clean["margin"].iloc[0] == pytest.approx(60.0)
 
+    def test_an_empty_cell_never_becomes_the_string_nan(self):
+        """Regression: a float NaN was surviving as the literal text "nan".
+
+        That is worse than a fake zero — it reads as data, passes truthiness
+        checks, and would be shown to the user as an email address.
+        """
+        from app.data.ingestion import read_table
+
+        raw = b"customer_id,name,email,notes\nC1,Rossi,a@x.it,hello\nC2,Bianchi,,\n"
+        frame, _ = read_table(raw, "gaps.csv")
+        clean, _ = apply_mapping(frame, "customers",
+                                 map_columns(frame, "customers").as_field_map())
+
+        for column in ("email", "notes"):
+            values = [v for v in clean[column] if v is not None and v == v]
+            assert "nan" not in [str(v).lower() for v in values]
+        assert pd.isna(clean["email"].iloc[1])
+
     def test_missing_price_stays_nan_and_never_becomes_zero(self):
         frame = pd.DataFrame({
             "product_id": ["P1", "P2"],

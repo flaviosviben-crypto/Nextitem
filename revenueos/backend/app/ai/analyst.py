@@ -211,6 +211,15 @@ def _deterministic_answer(workspace, question: str) -> AnalystAnswer:
     )
 
 
+def _clip(text: str, limit: int) -> str:
+    """Trim to a word boundary so a table cell never ends mid-sentence."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(" ,;:.")
+    return f"{cut}…"
+
+
 def _money(value: Any) -> str:
     try:
         number = float(value)
@@ -238,7 +247,8 @@ def _compose(intent: str, datasets: list[dict[str, Any]]) -> str:
         ]
         for opp in opportunities[:6]:
             lines.append(
-                f"| {opp['title']} | {opp['why'][:110]} | {opp['action'][:70]} | "
+                f"| {opp['title']} | {_clip(opp['why'], 120)} | "
+                f"{_clip(opp['action'], 80)} | "
                 f"{_money(opp['estimatedValue'])} | {opp['score']:.0f}/100 |"
             )
         return "\n".join(lines)

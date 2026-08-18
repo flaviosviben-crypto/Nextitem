@@ -231,10 +231,13 @@ def numeric_ratio(series: pd.Series, sample: int = 400) -> float:
 # main entrypoint
 # --------------------------------------------------------------------------- #
 def _clean_header(name: Any, index: int) -> str:
-    text = "" if name is None else str(name)
+    if name is None or (isinstance(name, float) and np.isnan(name)):
+        # A row wider than the header line leaves unnamed trailing columns.
+        return f"column_{index + 1}"
+    text = str(name)
     text = text.replace("﻿", "").strip()
     text = _MULTISPACE_RE.sub(" ", text)
-    if not text or text.lower().startswith("unnamed:"):
+    if not text or text.lower() in {"nan", "none"} or text.lower().startswith("unnamed:"):
         return f"column_{index + 1}"
     return text
 
@@ -255,28 +258,35 @@ def read_table(raw: bytes, filename: str = "upload.csv") -> tuple[pd.DataFrame, 
     delimiter = detect_delimiter(text)
     header_row = detect_header_row(text, delimiter)
 
+    # Find the widest row so pandas never has to "skip a bad line": a data row
+    # containing an unescaped delimiter is common in real exports, and silently
+    # dropping it would destroy the file rather than importing it.
+    width, ragged = _scan_widths(text, delimiter, header_row)
+
     try:
-        # header=None so pandas does not silently rename duplicate columns to
-        # "name.1"; we apply our own de-duplication in _finalise and report it.
+        # names=range(width) fixes the frame width up front. header=None then
+        # keeps duplicate header names intact for our own de-duplication, which
+        # pandas would otherwise rename to "name.1" behind our back.
         frame = pd.read_csv(
             io.StringIO(text),
             sep=delimiter,
             skiprows=header_row,
             header=None,
+            names=list(range(width)),
             dtype=str,
             keep_default_na=False,
             na_values=["", "NULL", "null", "N/A", "n/a", "NaN", "#N/A", "-"],
             engine="python",
-            on_bad_lines="skip",
             skip_blank_lines=True,
         )
-        if frame.empty:
-            raise IngestionError("The file contains no rows.")
-        header_values = frame.iloc[0].tolist()
-        frame = frame.iloc[1:].reset_index(drop=True)
-        frame.columns = header_values
     except Exception as exc:  # pragma: no cover - defensive
         raise IngestionError(f"Could not parse the file: {exc}") from exc
+
+    if frame.empty:
+        raise IngestionError("The file contains no rows.")
+    header_values = frame.iloc[0].tolist()
+    frame = frame.iloc[1:].reset_index(drop=True)
+    frame.columns = header_values
 
     report = ParseReport(
         filename=filename,
@@ -290,7 +300,29 @@ def read_table(raw: bytes, filename: str = "upload.csv") -> tuple[pd.DataFrame, 
         report.warnings.append(
             f"Skipped {header_row} preamble row(s) before the header line."
         )
+    if ragged:
+        report.warnings.append(
+            f"{ragged} row(s) have more values than the header line — most often an "
+            f"unquoted '{delimiter}' inside a value. The extra values were kept in "
+            "additional columns rather than dropped; check the mapping below."
+        )
     return _finalise(frame, report)
+
+
+def _scan_widths(text: str, delimiter: str, header_row: int) -> tuple[int, int]:
+    """Return ``(widest_row, rows_wider_than_the_header)``."""
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    widths: list[int] = []
+    for index, row in enumerate(reader):
+        if index < header_row:
+            continue
+        if not any(cell.strip() for cell in row):
+            continue
+        widths.append(len(row))
+    if not widths:
+        raise IngestionError("The file contains no readable rows.")
+    header_width = widths[0]
+    return max(widths), sum(1 for w in widths[1:] if w > header_width)
 
 
 def _read_excel(raw: bytes, filename: str) -> tuple[pd.DataFrame, ParseReport]:
@@ -324,13 +356,17 @@ def _finalise(frame: pd.DataFrame, report: ParseReport) -> tuple[pd.DataFrame, P
         new_columns.append(name)
     frame.columns = new_columns
 
-    # 2. trim whitespace on every cell
+    # 2. trim whitespace and normalise every flavour of "missing" to a real
+    # null. A mask is used rather than Series.replace(..., None) because that
+    # can leave the original value in place, which is how a float NaN becomes
+    # the *string* "nan" and travels downstream as if it were data.
+    missing_tokens = {"nan", "none", "null", "n/a", "na", "#n/a", "-", ""}
     for col in frame.columns:
-        if frame[col].dtype == object:
-            frame[col] = frame[col].astype(str).str.strip()
-            frame[col] = frame[col].replace(
-                {"nan": None, "NaN": None, "None": None, "": None, "NULL": None}
-            )
+        if frame[col].dtype != object:
+            continue
+        text = frame[col].astype(str).str.strip()
+        blank = frame[col].isna() | text.str.lower().isin(missing_tokens)
+        frame[col] = text.where(~blank, other=None)
 
     # 3. drop fully-empty columns and rows. With no data rows every column
     # looks empty, so the drop is skipped — a header-only file still reports
