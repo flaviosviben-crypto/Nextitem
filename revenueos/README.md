@@ -85,7 +85,7 @@ revenueos/
 │   │   │   └── analyst.py           Intent → analytics → interpretation
 │   │   ├── demo/generator.py   Correlated synthetic boutique
 │   │   └── routers/            11 API routers
-│   └── tests/                  190 tests
+│   └── tests/                  219 tests
 └── frontend/                   Next.js 15 · React 19 · TypeScript · Tailwind 4
     ├── app/                    App Router pages
     ├── components/             Shell, command palette, UI primitives, charts
@@ -168,7 +168,11 @@ docker compose up --build
 → web on <http://localhost:3000>, API on <http://localhost:8000>
 (interactive API docs at `/docs`).
 
-### Locally
+> The Docker path is written but has not been executed — the development
+> container this was built in has no Docker daemon. The local path below is the
+> one that has been run end to end.
+
+### Locally (verified)
 
 ```bash
 # terminal 1
@@ -375,7 +379,7 @@ pipeline — the same mapping and cleaning your files go through.
 cd backend && python -m pytest tests/ -q
 ```
 
-190 tests covering:
+219 tests covering:
 
 | File | What it protects |
 | --- | --- |
@@ -385,6 +389,7 @@ cd backend && python -m pytest tests/ -q
 | `test_analytics.py` | Customer metrics, adaptive RFM, inventory ageing, opportunity scoring |
 | `test_quality.py` | Health score, issue detection, capability map |
 | `test_api.py` | Every endpoint, the upload → map → commit flow, GDPR deletion |
+| `test_ai.py` | The tool contract, PII stripping, the tool-calling loop, and graceful degradation (with a stubbed model — no live API call) |
 
 The load-bearing tests:
 
@@ -395,6 +400,9 @@ The load-bearing tests:
 - `test_a_new_arrival_that_has_not_sold_is_not_at_risk` — stock maturity
 - `test_uncomputable_metrics_stay_null_rather_than_zero` — no fake zeros
 - `test_demo_behaviour_is_correlated_not_random` — the demo proves the engine
+- `test_a_row_wider_than_the_header_is_kept_not_dropped` — silent data loss
+- `test_an_empty_cell_never_becomes_the_string_nan` — null corruption
+- `test_the_model_can_only_get_numbers_through_a_tool` — the AI contract
 
 ---
 
@@ -439,10 +447,13 @@ The load-bearing tests:
    deliberate trade for explainability with small datasets, but a boutique with
    years of history could do better.
 7. **Excel import needs `openpyxl`**, which is not in `requirements.txt` — CSV is
-   the tested path.
-8. **No seasonality decomposition.** Trends are period-over-period comparisons;
+   the tested path. The error message says so rather than failing opaquely.
+8. **The Docker images have not been built.** The Dockerfiles and compose file
+   are written and reviewed but no daemon was available to run them; treat them
+   as a starting point rather than a verified artefact.
+9. **No seasonality decomposition.** Trends are period-over-period comparisons;
    a genuinely seasonal business will see swings that are not really changes.
-9. **The AI Analyst has no memory across sessions.** Conversation history is
+10. **The AI Analyst has no memory across sessions.** Conversation history is
    passed within a session only.
 
 ---

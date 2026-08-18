@@ -24,6 +24,9 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # Needed at build time: Next bakes rewrites into the route manifest.
+        API_URL: http://backend:8000
     environment:
       # Server-side only: the browser always calls same-origin /api/*.
       API_URL: http://backend:8000
