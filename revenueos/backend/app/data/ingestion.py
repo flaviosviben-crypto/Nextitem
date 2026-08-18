@@ -256,10 +256,13 @@ def read_table(raw: bytes, filename: str = "upload.csv") -> tuple[pd.DataFrame, 
     header_row = detect_header_row(text, delimiter)
 
     try:
+        # header=None so pandas does not silently rename duplicate columns to
+        # "name.1"; we apply our own de-duplication in _finalise and report it.
         frame = pd.read_csv(
             io.StringIO(text),
             sep=delimiter,
             skiprows=header_row,
+            header=None,
             dtype=str,
             keep_default_na=False,
             na_values=["", "NULL", "null", "N/A", "n/a", "NaN", "#N/A", "-"],
@@ -267,6 +270,11 @@ def read_table(raw: bytes, filename: str = "upload.csv") -> tuple[pd.DataFrame, 
             on_bad_lines="skip",
             skip_blank_lines=True,
         )
+        if frame.empty:
+            raise IngestionError("The file contains no rows.")
+        header_values = frame.iloc[0].tolist()
+        frame = frame.iloc[1:].reset_index(drop=True)
+        frame.columns = header_values
     except Exception as exc:  # pragma: no cover - defensive
         raise IngestionError(f"Could not parse the file: {exc}") from exc
 
@@ -324,8 +332,10 @@ def _finalise(frame: pd.DataFrame, report: ParseReport) -> tuple[pd.DataFrame, P
                 {"nan": None, "NaN": None, "None": None, "": None, "NULL": None}
             )
 
-    # 3. drop fully-empty columns and rows
-    empty_cols = [c for c in frame.columns if frame[c].isna().all()]
+    # 3. drop fully-empty columns and rows. With no data rows every column
+    # looks empty, so the drop is skipped — a header-only file still reports
+    # its schema instead of failing as unreadable.
+    empty_cols = [c for c in frame.columns if frame[c].isna().all()] if len(frame) else []
     if empty_cols:
         frame = frame.drop(columns=empty_cols)
         report.dropped_empty_columns = empty_cols

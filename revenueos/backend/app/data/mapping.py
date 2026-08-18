@@ -234,6 +234,11 @@ def _kind_score(profile: ColumnProfile, field: Field) -> float:
     if kind is Kind.CATEGORY:
         if profile.email_ratio > 0.5 or profile.date_ratio > 0.8:
             return 0.05
+        # "Every value is distinct" only means something once there are enough
+        # rows for repetition to be possible. On a 3-row sample every column
+        # looks unique, which must not veto a genuine category column.
+        if profile.non_null < 12:
+            return 0.45 if profile.numeric_ratio > 0.9 else 0.7
         uniq = profile.uniqueness
         # categories repeat: low uniqueness is *good*
         base = 1.0 if uniq <= 0.25 else max(0.15, 1.0 - (uniq - 0.25) * 1.15)
@@ -308,6 +313,13 @@ def score_column(header: str, profile: ColumnProfile, entity: Entity,
             confidence *= 0.45
         if profile.fill_rate < 0.05:
             confidence *= 0.5
+
+        # Some value types identify themselves. A column of valid email
+        # addresses is the email column whatever its header says, so strong
+        # value evidence sets a floor the lexical penalty cannot drag under.
+        if field.kind in {Kind.EMAIL, Kind.PHONE, Kind.DATE} and val >= 0.85:
+            confidence = max(confidence, 0.55 * val)
+
         confidence = max(0.0, min(1.0, confidence))
         if confidence <= 0.02:
             continue

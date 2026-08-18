@@ -110,6 +110,8 @@ class MatchingContext:
     brand_norm: pd.Series | None = None
     color_norm: pd.Series | None = None
     notes: list[str] = field(default_factory=list)
+    # Signal keys the catalogue cannot support at all (no colour column, etc.)
+    absent_signals: list[str] = field(default_factory=list)
     # Profiles are expensive to rebuild and never change within a pipeline run,
     # so the reverse direction (customers for a product) builds them once.
     _profiles: dict[str, "CustomerProfile"] = field(default_factory=dict)
@@ -169,10 +171,16 @@ def build_context(products: pd.DataFrame, customers: pd.DataFrame,
     # Attach the prior to the frame so any subset (or a single row) carries it.
     ctx.products = products.assign(_appeal=ctx.product_appeal)
 
-    for label, ok in (("category", ctx.has_category), ("brand", ctx.has_brand),
-                      ("colour", ctx.has_color), ("size", ctx.has_size),
-                      ("price", ctx.has_price)):
+    # Signals the catalogue cannot support at all. These never enter the
+    # calculation, so they would otherwise be invisible; they are recorded here
+    # and reported on every result alongside the per-pair gaps.
+    for key, label, ok in (("category", "category", ctx.has_category),
+                           ("brand", "brand", ctx.has_brand),
+                           ("color", "colour", ctx.has_color),
+                           ("size", "size", ctx.has_size),
+                           ("price", "price", ctx.has_price)):
         if not ok:
+            ctx.absent_signals.append(key)
             ctx.notes.append(
                 f"No {label} data in the catalogue — that signal's weight was "
                 "redistributed across the others."
@@ -973,6 +981,11 @@ def _result_payload(profile: CustomerProfile, row: pd.Series, scored: dict[str, 
     missing = [
         SIGNAL_LABELS[name] for name, available in scored["available"].items()
         if not bool(available[pos])
+    ]
+    # Catalogue-wide gaps never reach the signal loop, so add them explicitly.
+    missing += [
+        SIGNAL_LABELS[key] for key in ctx.absent_signals
+        if SIGNAL_LABELS[key] not in missing
     ]
 
     return {

@@ -1,0 +1,237 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ *
+ * RevenueOS design tokens
+ *
+ * Dark-first, because this is a tool an owner keeps open all day next to
+ * the till. Light mode is a full inversion, not an afterthought.
+ * The palette is deliberately narrow: one accent, one positive, one
+ * warning, one danger. Colour carries meaning here, so it is rationed.
+ * ------------------------------------------------------------------ */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --color-canvas: #08090c;
+  --color-surface: #0d0f14;
+  --color-surface-2: #12151c;
+  --color-elevated: #171a22;
+  --color-line: rgba(255, 255, 255, 0.07);
+  --color-line-strong: rgba(255, 255, 255, 0.12);
+
+  --color-ink: #f0f2f7;
+  --color-ink-2: #a9b1c2;
+  --color-ink-3: #6b7488;
+  --color-ink-4: #4a5162;
+
+  --color-accent: #6d6bf5;
+  --color-accent-soft: rgba(109, 107, 245, 0.14);
+  --color-accent-line: rgba(109, 107, 245, 0.32);
+
+  --color-positive: #3ecf8e;
+  --color-positive-soft: rgba(62, 207, 142, 0.13);
+  --color-warning: #f5b544;
+  --color-warning-soft: rgba(245, 181, 68, 0.13);
+  --color-danger: #f76d7a;
+  --color-danger-soft: rgba(247, 109, 122, 0.13);
+  --color-info: #56b8f0;
+  --color-info-soft: rgba(86, 184, 240, 0.13);
+
+  --radius-card: 14px;
+  --radius-control: 10px;
+}
+
+:root {
+  color-scheme: dark;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, 0.7);
+  --grid-line: rgba(255, 255, 255, 0.022);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-canvas: #fbfbfd;
+  --color-surface: #ffffff;
+  --color-surface-2: #f6f7f9;
+  --color-elevated: #ffffff;
+  --color-line: rgba(9, 12, 24, 0.09);
+  --color-line-strong: rgba(9, 12, 24, 0.16);
+  --color-ink: #0d1117;
+  --color-ink-2: #4a5262;
+  --color-ink-3: #737c8d;
+  --color-ink-4: #98a0ae;
+  --color-accent: #5451e8;
+  --color-accent-soft: rgba(84, 81, 232, 0.09);
+  --color-accent-line: rgba(84, 81, 232, 0.26);
+  --color-positive: #12996a;
+  --color-positive-soft: rgba(18, 153, 106, 0.1);
+  --color-warning: #b57a09;
+  --color-warning-soft: rgba(181, 122, 9, 0.1);
+  --color-danger: #d94356;
+  --color-danger-soft: rgba(217, 67, 86, 0.1);
+  --color-info: #1c7fc4;
+  --color-info-soft: rgba(28, 127, 196, 0.1);
+  --shadow-card: 0 1px 2px rgba(9, 12, 24, 0.05), 0 8px 24px -16px rgba(9, 12, 24, 0.18);
+  --shadow-pop: 0 16px 48px -12px rgba(9, 12, 24, 0.2);
+  --grid-line: rgba(9, 12, 24, 0.028);
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.005em;
+}
+
+/* Faint grid, fading out — gives depth without decoration. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent 65%);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+}
+
+/* ---------------- scrollbars ---------------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-4);
+  background-clip: content-box;
+}
+
+/* ---------------- primitives ---------------- */
+@utility card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+@utility glass {
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--color-line);
+}
+
+@utility eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+@utility num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+@utility focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-accent-line);
+}
+
+/* ---------------- motion ---------------- */
+@keyframes ros-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ros-shimmer {
+  0% {
+    background-position: -180% 0;
+  }
+  100% {
+    background-position: 180% 0;
+  }
+}
+
+@keyframes ros-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-accent-soft);
+  }
+  70% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.animate-fade-up {
+  animation: ros-fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 20%,
+    var(--color-elevated) 42%,
+    var(--color-surface-2) 64%
+  );
+  background-size: 220% 100%;
+  animation: ros-shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Recharts inherits our tokens rather than shipping its own greys. */
+.recharts-cartesian-axis-tick text {
+  fill: var(--color-ink-3);
+  font-size: 11px;
+}
+.recharts-cartesian-grid line {
+  stroke: var(--color-line);
+}
+.recharts-surface:focus {
+  outline: none;
+}

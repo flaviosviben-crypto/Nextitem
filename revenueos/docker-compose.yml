@@ -1,0 +1,37 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-5-20250929}
+      REVENUEOS_DATA_DIR: /data
+      REVENUEOS_CURRENCY: ${REVENUEOS_CURRENCY:-EUR}
+      REVENUEOS_MINIMISE_PII: ${REVENUEOS_MINIMISE_PII:-true}
+      REVENUEOS_CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - revenueos-data:/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      # Server-side only: the browser always calls same-origin /api/*.
+      API_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  revenueos-data:

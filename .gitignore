@@ -12,3 +12,4 @@ revenueos/backend/var/
 .env
 .env.local
 .DS_Store
+shots.cjs

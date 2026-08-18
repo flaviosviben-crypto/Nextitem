@@ -203,7 +203,8 @@ TRANSACTIONS = Entity(
     label="Transactions",
     description="One row per sold line item (or per order).",
     signature_tokens=("transaction", "order", "sale", "vendita", "scontrino", "ordine",
-                      "receipt", "fattura", "invoice"),
+                      "receipt", "fattura", "invoice", "data", "date", "importo",
+                      "amount", "acquisto", "quantita", "qty", "sku"),
     fields=(
         Field("transaction_id", "Transaction ID", Kind.ID,
               aliases=("transaction_id", "order_id", "id_ordine", "numero ordine", "receipt",

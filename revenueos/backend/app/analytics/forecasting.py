@@ -43,6 +43,14 @@ def revenue_timeseries(transactions: pd.DataFrame | None, freq: str = "W",
         if "customer_id" in window.columns else np.nan
     )
 
+    # The final bucket is almost always a partial week and would render as a
+    # cliff on the chart, reading as a collapse in sales that has not happened.
+    if len(grouped) > 1:
+        last_start = grouped.iloc[-1]["date"]
+        period_end = last_start + pd.tseries.frequencies.to_offset(freq)
+        if end < period_end - pd.Timedelta(days=1):
+            grouped = grouped.iloc[:-1]
+
     points = [
         {
             "date": row["date"].strftime("%Y-%m-%d"),
