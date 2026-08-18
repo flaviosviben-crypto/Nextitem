@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+__pycache__/
+*.pyc
+.venv/
+venv/
+revenueos/backend/var/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+.DS_Store
