@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from app.analytics import customer_scoring, inventory, opportunities, rfm
+from app.analytics import (
+    compliance, customer_scoring, inventory, opportunities, segmentation,
+)
 
 TODAY = date(2026, 8, 17)
 
@@ -64,22 +66,125 @@ def test_customer_only_in_transactions_is_still_profiled():
     assert [p["customer_id"] for p in profiles] == ["GHOST"]
 
 
+def _classified(customers, txs, today=TODAY):
+    """Profiles through the real V1 pipeline: value, lifecycle, then eligibility."""
+    profiles = customer_scoring.build_profiles(customers, txs, today)
+    return compliance.apply(segmentation.classify(profiles), today)
+
+
+def test_a_customer_just_past_their_cycle_is_due_not_lost():
+    """The defect that made RevenueOS untrustworthy: 107% through a cycle is Due.
+
+    A boutique customer a few days past their expected repurchase point is the
+    single best person to call. Labelling them Lost both insults the relationship
+    and buries the opportunity under a low-priority broadcast.
+    """
+    result = segmentation.classify_lifecycle(recency_days=107, cycle_days=100)
+    assert result["lifecycle"] == "Due"
+    assert result["cycle_position"] == 1.07
+
+
+def test_lifecycle_boundaries_are_ordered_and_configurable():
+    at = lambda days: segmentation.classify_lifecycle(days, 100)["lifecycle"]
+    assert at(80) == "Active"      # inside their rhythm
+    assert at(100) == "Active"     # exactly at the point is not yet late
+    assert at(140) == "Due"        # just past it — the moment to make contact
+    assert at(200) == "At Risk"    # meaningfully beyond
+    assert at(400) == "Lost"       # genuinely lapsed
+
+    # A jeweller and a denim store do not share a definition of overdue.
+    patient = {"active_max": 2.0, "due_max": 3.0, "at_risk_max": 5.0}
+    assert segmentation.classify_lifecycle(140, 100, patient)["lifecycle"] == "Active"
+
+
+def test_value_and_lifecycle_are_independent():
+    """A VIP can be Lost; a Standard customer can be Active. The pair carries it."""
+    customers, txs = [], []
+    for i in range(24):
+        cid = f"C{i}"
+        customers.append({"customer_id": cid, "name": f"Cust {i}", "marketing_consent": True})
+        # Big spenders who lapsed, small spenders who are current.
+        spend, offset = (4000, 700) if i % 2 else (200, 10)
+        for n in range(4):
+            txs.append(_tx(cid, offset + n * 40, spend, order=f"{cid}-{n}"))
+    profiles = _classified(customers, txs)
+
+    tiers = {p["value_tier"] for p in profiles}
+    stages = {p["lifecycle"] for p in profiles}
+    assert tiers & {"VIP", "Promising"}, "high spenders must reach an elevated tier"
+    assert "Lost" in stages and "Active" in stages
+    lapsed_high = [p for p in profiles if p["lifecycle"] == "Lost"
+                   and p["value_tier"] in {"VIP", "Promising"}]
+    assert lapsed_high, "value must survive a customer going quiet"
+    for p in profiles:
+        assert p["segment"] == f"{p['value_tier']} · {p['lifecycle']}"
+
+
+def test_a_thin_history_never_states_a_confident_cycle():
+    """Two receipts is not a rhythm. Say where the number came from, or say nothing."""
+    customers = [{"customer_id": "THIN", "name": "Thin"}]
+    txs = [_tx("THIN", 300, 400, order="a"), _tx("THIN", 200, 400, order="b")]
+    p = _classified(customers, txs)[0]
+    assert p["cycle_source"] != "customer"
+    assert p["cycle_confidence"] in {"Medium", "Low", "None"}
+    assert p["cycle_basis"], "an inferred cycle must say what it was inferred from"
+
+
+def test_a_customer_with_no_history_gets_no_invented_cycle():
+    p = _classified([{"customer_id": "NEW", "name": "New"}], [])[0]
+    assert p["cycle_days"] is None
+    assert p["cycle_source"] == "none"
+    assert "Not enough purchase history" in p["cycle_basis"]
+
+
+def test_unknown_consent_is_not_consent():
+    profiles = compliance.apply([
+        {"customer_id": "A", "email": "a@x.com", "marketing_consent": True},
+        {"customer_id": "B", "email": "b@x.com", "marketing_consent": None},
+        {"customer_id": "C", "email": "c@x.com", "do_not_contact": True},
+    ], TODAY)
+    by_id = {p["customer_id"]: p for p in profiles}
+    assert by_id["A"]["contactable"] is True
+    assert by_id["B"]["contactable"] is False
+    assert by_id["C"]["contactable"] is False
+    assert "not to be contacted" in by_id["C"]["suppression_reason"]
+
+
+def test_a_channel_is_never_recommended_without_consent_and_a_way_to_reach_them():
+    # Consent for WhatsApp but no phone number on file: the channel stays shut.
+    elig = compliance.evaluate({"customer_id": "X", "whatsapp_consent": True,
+                                "email_consent": True, "email": "x@x.com"}, TODAY)
+    keys = {c["key"] for c in elig["channels"]}
+    assert "whatsapp" not in keys
+    assert "email" in keys
+
+    # A specific refusal beats a general yes.
+    elig = compliance.evaluate({"customer_id": "Y", "marketing_consent": True,
+                                "email": "y@x.com", "email_consent": False}, TODAY)
+    assert "email" not in {c["key"] for c in elig["channels"]}
+
+
 def test_segments_adapt_to_the_dataset():
+    """Tiers are percentiles within this boutique, not thresholds carried in."""
     customers, txs = [], []
     for i in range(30):
         cid = f"C{i}"
         customers.append({"customer_id": cid, "name": f"Cust {i}", "marketing_consent": True})
-        # Spread of value and recency so quintiles have something to bite on.
+        # Spread of value and recency so the percentiles have something to bite on.
         for n in range(1 + i % 6):
             txs.append(_tx(cid, 30 + i * 12 + n * 45, 100 + i * 60, order=f"{cid}-{n}"))
-    profiles = customer_scoring.build_profiles(customers, txs, TODAY)
-    profiles = rfm.assign_segments(profiles)
+    profiles = _classified(customers, txs)
 
-    labels = {p["segment"] for p in profiles}
-    assert len(labels) >= 3, "a varied dataset must produce a spread of segments"
-    assert labels <= set(rfm.SEGMENTS)
+    assert {p["value_tier"] for p in profiles} <= set(segmentation.VALUE_TIERS)
+    assert {p["lifecycle"] for p in profiles} <= set(segmentation.LIFECYCLE_STAGES)
+    assert len({p["segment"] for p in profiles}) >= 3, \
+        "a varied dataset must produce a spread of value/lifecycle pairs"
     for p in profiles:
-        assert p["segment_play"]
+        assert p["value_basis"], "a tier the advisor cannot verify is not a tier"
+
+    summary = segmentation.summarize(profiles)
+    assert sum(row["customers"] for row in summary["value"]) == len(profiles)
+    assert sum(row["customers"] for row in summary["lifecycle"]) == len(profiles)
 
 
 def test_recency_is_relative_to_each_customers_cadence():
@@ -132,42 +237,88 @@ def test_sell_through_needs_both_halves():
     assert stats[0]["sell_through"] is None
 
 
-def test_opportunities_are_ranked_and_explainable():
+def _opportunity_fixture():
     customers, txs = [], []
     for i in range(24):
         cid = f"C{i}"
-        customers.append({"customer_id": cid, "name": f"Cust {i}", "marketing_consent": True})
+        customers.append({"customer_id": cid, "name": f"Cust {i}",
+                          "marketing_consent": True, "email": f"c{i}@boutique.test"})
         for n in range(4):
             txs.append(_tx(cid, 400 - n * 90 + i, 600 + i * 40, order=f"{cid}-{n}"))
-    profiles = rfm.assign_segments(customer_scoring.build_profiles(customers, txs, TODAY))
+    profiles = _classified(customers, txs)
     products = inventory.build_product_stats([
         {"sku": "A1", "product_name": "Tote", "category": "Leather Goods", "brand": "Totême",
          "price": 890, "cost": 340, "stock": 5, "arrival_date": TODAY - timedelta(days=400)},
         {"sku": "A2", "product_name": "New Tote", "category": "Leather Goods", "brand": "Totême",
          "price": 950, "cost": 360, "stock": 4, "arrival_date": TODAY - timedelta(days=15)},
     ], txs, TODAY)
+    return profiles, products, txs
 
+
+def test_every_opportunity_names_a_customer_a_reason_and_an_action():
+    profiles, products, txs = _opportunity_fixture()
     found = opportunities.detect(profiles, products, txs, TODAY)
     assert found
-    assert all(0 <= o["score"] <= 100 for o in found)
-    assert found == sorted(found, key=lambda o: -o["score"])
+    assert all(0 <= o["priority"] <= 100 for o in found)
+    assert found == sorted(found, key=lambda o: -o["priority"])
     for o in found:
-        assert o["title"] and o["explanation"] and o["action"]
-        assert o["impact_basis"], "every money figure must state its basis"
-        assert o["expected_value"] is not None
+        assert o["customer_id"] and o["customer_name"]        # who
+        assert o["why_now"]                                    # why now
+        assert o["action"]                                     # how to act
+        assert o["value_basis"], "every money figure must state its basis"
+        assert "modelled" in o["probability_basis"].lower()
 
 
-def test_expected_value_is_below_headline_impact():
-    """Headline impact is the best case; expected value must be discounted."""
-    customers = [{"customer_id": f"C{i}", "name": f"C{i}", "marketing_consent": True}
-                 for i in range(20)]
-    txs = [_tx(f"C{i}", 300 - n * 80, 700, order=f"C{i}-{n}")
-           for i in range(20) for n in range(3)]
-    profiles = rfm.assign_segments(customer_scoring.build_profiles(customers, txs, TODAY))
-    found = opportunities.detect(profiles, [], txs, TODAY)
-    for o in found:
-        if o.get("impact"):
-            assert o["expected_value"] <= o["impact"]
+def test_one_customer_gets_one_opportunity():
+    """Five cards for one person is a to-do list, not a recommendation."""
+    profiles, products, txs = _opportunity_fixture()
+    found = opportunities.detect(profiles, products, txs, TODAY)
+    ids = [o["customer_id"] for o in found]
+    assert len(ids) == len(set(ids))
+
+
+def test_the_daily_list_is_never_padded_to_a_quota():
+    """A quiet day is a short list, not a list of weak suggestions."""
+    profiles, products, txs = _opportunity_fixture()
+    found = opportunities.detect(profiles, products, txs, TODAY)
+    shortlist = opportunities.daily(found, max_cards=20)
+    assert len(shortlist) <= 20
+    assert all(o["priority"] >= 55 for o in shortlist)
+    # An empty engine yields an empty day, not filler.
+    assert opportunities.daily([], max_cards=20) == []
+
+
+def test_incremental_value_is_below_influenced_value():
+    """We claim less than we observe, because some of it would have happened anyway."""
+    profiles, products, txs = _opportunity_fixture()
+    for o in opportunities.detect(profiles, products, txs, TODAY):
+        if o.get("influenced_value"):
+            assert o["incremental_value"] <= o["influenced_value"]
+
+
+def test_lifecycle_alone_does_not_decide_priority():
+    """A lapsed VIP must be able to outrank an active nobody."""
+    vip = {"customer_id": "VIP", "name": "Vip", "value_tier": "VIP", "value_percentile": 0.97,
+           "lifecycle": "Lost", "data_confidence": "High", "cycle_confidence": "High",
+           "order_count": 8}
+    small = {"customer_id": "SML", "name": "Small", "value_tier": "Standard",
+             "value_percentile": 0.15, "lifecycle": "Due", "data_confidence": "Low",
+             "cycle_confidence": "Low", "order_count": 1}
+    trigger_lost = {"kind": "win_back", "headline": "", "why_now": ""}
+    trigger_due = {"kind": "due", "headline": "", "why_now": ""}
+    high = opportunities._priority(vip, trigger_lost, 0.09, 900, None, 1000, True)
+    low = opportunities._priority(small, trigger_due, 0.30, 40, None, 1000, True)
+    assert high > low
+
+
+def test_a_customer_with_no_permitted_channel_is_ranked_below_a_reachable_one():
+    profile = {"customer_id": "P", "name": "P", "value_tier": "VIP", "value_percentile": 0.9,
+               "lifecycle": "Due", "data_confidence": "High", "cycle_confidence": "High",
+               "order_count": 5}
+    trigger = {"kind": "due", "headline": "", "why_now": ""}
+    reachable = opportunities._priority(profile, trigger, 0.3, 500, None, 1000, True)
+    blocked = opportunities._priority(profile, trigger, 0.3, 500, None, 1000, False)
+    assert blocked < reachable
 
 
 def test_portfolio_summary_handles_empty_dataset():

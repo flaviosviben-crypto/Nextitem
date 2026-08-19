@@ -83,11 +83,11 @@ def build(payload: CampaignRequest) -> dict[str, Any]:
 def _audience_for(template: str, limit: int, contactable_only: bool):
     profiles = workspace.profiles
     if contactable_only:
-        profiles = [p for p in profiles if p.get("marketing_consent") is True]
+        profiles = [p for p in profiles if p.get("contactable")]
 
     products: list[dict[str, Any]] = []
     if template == "vip_private_sale":
-        pool = [p for p in profiles if p.get("segment") in {"VIP", "Champions", "Loyal"}]
+        pool = [p for p in profiles if p.get("value_tier") in {"VIP", "Promising"}]
         pool.sort(key=lambda p: -(p.get("total_spend") or 0))
     elif template == "new_collection":
         products = [p for p in workspace.products
@@ -95,7 +95,7 @@ def _audience_for(template: str, limit: int, contactable_only: bool):
         products.sort(key=lambda p: -(p.get("price") or 0))
         pool = profiles
     elif template == "reactivate_lapsed":
-        pool = [p for p in profiles if p.get("segment") in {"At Risk", "Sleeping"}
+        pool = [p for p in profiles if p.get("lifecycle") in {"At Risk", "Lost"}
                 and (p.get("total_spend") or 0) > 0]
         pool.sort(key=lambda p: -(p.get("total_spend") or 0))
     else:  # slow_movers
@@ -115,10 +115,11 @@ def _audience_for(template: str, limit: int, contactable_only: bool):
         audience.append({
             "customer_id": p["customer_id"],
             "name": p["name"],
-            "segment": p.get("segment"),
+            "value_tier": p.get("value_tier"),
+            "lifecycle": p.get("lifecycle"),
             "top_category": p.get("top_category"),
             "total_spend": p.get("total_spend"),
-            "contactable": p.get("marketing_consent") is True,
+            "contactable": p.get("contactable", False),
             "product": ({"sku": best[0]["sku"], "name": best[0]["product_name"],
                          "match_pct": best[0]["match_pct"], "price": best[0]["price"],
                          "why": best[0]["why"]} if best else None),

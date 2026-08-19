@@ -147,8 +147,9 @@ def test_gender_mismatch_is_excluded():
     assert matching.score_pair(customer, product) is None
 
 
-def test_expected_value_respects_consent():
+def test_expected_value_respects_contact_eligibility():
+    """A customer we have no permitted channel for is worth less to act on."""
     m = matching.score_pair(FULL_CUSTOMER, FULL_PRODUCT)
-    consented = matching.expected_value(m, FULL_CUSTOMER)
-    unknown = matching.expected_value(m, dict(FULL_CUSTOMER, marketing_consent=None))
-    assert consented > unknown
+    reachable = matching.expected_value(m, dict(FULL_CUSTOMER, contactable=True))
+    blocked = matching.expected_value(m, dict(FULL_CUSTOMER, contactable=False))
+    assert reachable > blocked

@@ -26,8 +26,10 @@ _LABEL_FIELDS = {"category", "subcategory", "brand", "city", "country", "store",
 _MONEY_FIELDS = {"total_spend", "avg_order_value", "unit_price", "line_total", "price",
                  "original_price", "cost", "discount"}
 _NUMBER_FIELDS = {"num_purchases", "quantity", "stock", "age", "margin", "discount_sensitivity"}
-_DATE_FIELDS = {"last_purchase_date", "first_purchase_date", "birth_date", "date", "arrival_date"}
-_BOOL_FIELDS = {"marketing_consent"}
+_DATE_FIELDS = {"last_purchase_date", "first_purchase_date", "birth_date", "date", "arrival_date",
+                "last_contacted_date"}
+_BOOL_FIELDS = {"marketing_consent", "email_consent", "sms_consent", "whatsapp_consent",
+                "phone_consent", "do_not_contact"}
 
 
 def _coerce(field: str, raw: object) -> Any:

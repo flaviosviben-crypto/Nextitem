@@ -49,7 +49,8 @@ def discount(payload: DiscountScenario) -> dict[str, Any]:
 def outreach(payload: OutreachScenario) -> dict[str, Any]:
     ids = payload.customer_ids
     if not ids and payload.segment:
-        ids = [p["customer_id"] for p in workspace.profiles if p.get("segment") == payload.segment]
+        ids = [p["customer_id"] for p in workspace.profiles
+               if payload.segment in {p.get("value_tier"), p.get("lifecycle")}]
     if not ids:
         raise HTTPException(400, "Select customers or a segment to model.")
     result = forecasting.simulate_outreach(workspace.profiles, ids, payload.conversion_rate)
@@ -70,7 +71,8 @@ def category(payload: CategoryScenario) -> dict[str, Any]:
 @router.get("/scenarios/options")
 def options() -> dict[str, Any]:
     return {
-        "segments": sorted({p.get("segment") for p in workspace.profiles if p.get("segment")}),
+        "segments": sorted({v for p in workspace.profiles
+                            for v in (p.get("value_tier"), p.get("lifecycle")) if v}),
         "categories": sorted({p.get("category") for p in workspace.products if p.get("category")}),
         "risk_classes": sorted({p.get("risk_class") for p in workspace.products
                                 if p.get("risk_class")}),

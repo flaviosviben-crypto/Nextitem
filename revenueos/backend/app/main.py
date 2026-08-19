@@ -6,7 +6,10 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import analyst, campaigns, customers, data, opportunities, products, scenarios
+from .routers import (
+    analyst, campaigns, customers, data, opportunities, overview, performance, products,
+    scenarios,
+)
 from .workspace import workspace
 
 app = FastAPI(
@@ -24,8 +27,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (data.router, customers.router, products.router, opportunities.router,
-               analyst.router, campaigns.router, scenarios.router):
+# The V1 surface is data, customers, products, opportunities and performance.
+# Analyst, campaigns and scenarios stay mounted: the intelligence is preserved
+# and reachable by API, it simply no longer has a place in the primary navigation.
+for router in (data.router, overview.router, customers.router, products.router,
+               opportunities.router, performance.router, analyst.router, campaigns.router, scenarios.router):
     app.include_router(router, prefix="/api")
 
 

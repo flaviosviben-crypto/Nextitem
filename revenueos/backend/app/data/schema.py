@@ -108,6 +108,28 @@ CUSTOMER_FIELDS: tuple[FieldSpec, ...] = (
        ("marketing consent", "consent", "opt in", "optin", "newsletter", "privacy",
         "consenso marketing", "consenso", "gdpr", "email consent", "accetta marketing"),
        "high", "Required before any outreach action is allowed."),
+    # Consent is per channel in practice: a customer who accepts a newsletter has
+    # not agreed to be messaged on WhatsApp. When a boutique exports these
+    # separately we honour them; when it does not we fall back to the general flag.
+    _f("email_consent", "Email Consent", "bool",
+       ("email consent", "consenso email", "newsletter consent", "consenso newsletter",
+        "opt in email", "email opt in", "mail consent", "consentement email"),
+       "medium", "Gates email outreach specifically."),
+    _f("sms_consent", "SMS Consent", "bool",
+       ("sms consent", "consenso sms", "text consent", "opt in sms", "sms opt in",
+        "consentement sms", "consenso messaggi")),
+    _f("whatsapp_consent", "WhatsApp Consent", "bool",
+       ("whatsapp consent", "consenso whatsapp", "wa consent", "whatsapp opt in",
+        "opt in whatsapp", "consenso messaggistica")),
+    _f("phone_consent", "Phone Consent", "bool",
+       ("phone consent", "call consent", "consenso telefonico", "consenso chiamate",
+        "opt in call", "telefono consenso")),
+    _f("do_not_contact", "Do Not Contact", "bool",
+       ("do not contact", "dnc", "unsubscribe", "unsubscribed", "opt out", "optout",
+        "non contattare", "revoca consenso", "blacklist", "suppress")),
+    _f("last_contacted_date", "Last Contacted", "date",
+       ("last contacted", "last contact date", "last outreach", "ultimo contatto",
+        "data ultimo contatto", "last campaign date", "derniere prise de contact")),
     _f("notes", "Notes", "text", ("notes", "note", "comment", "comments", "remarks", "osservazioni")),
 )
 

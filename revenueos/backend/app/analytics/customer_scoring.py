@@ -51,8 +51,12 @@ _MIN_CADENCE_DAYS = 14.0
 _MIN_CADENCE_SINGLE_GAP = 21.0
 
 
-def _median_gap_days(dates: list[date]) -> float | None:
-    """Median spacing between distinct purchase days, floored to stay believable."""
+def _median_gap_days(dates: list[date]) -> tuple[float, int] | None:
+    """Median spacing between distinct purchase days, plus how many gaps backed it.
+
+    The gap count is what tells the segmentation layer whether this cadence is
+    the customer's own rhythm or a coin flip that needs a cohort behind it.
+    """
     uniq = sorted(set(dates))
     if len(uniq) < 2:
         return None
@@ -62,7 +66,7 @@ def _median_gap_days(dates: list[date]) -> float | None:
     median = float(statistics.median(gaps))
     # One gap is an anecdote, not a cadence: hold it to a wider floor.
     floor = _MIN_CADENCE_DAYS if len(gaps) >= 2 else _MIN_CADENCE_SINGLE_GAP
-    return max(floor, median)
+    return max(floor, median), len(gaps)
 
 
 def build_profiles(
@@ -126,9 +130,13 @@ def _profile_one(rec: dict[str, Any], txs: list[dict[str, Any]], as_of: date) ->
     recency_days = (as_of - last_purchase).days if last_purchase else None
     tenure_days = (as_of - first_purchase).days if first_purchase else None
 
-    cadence = _median_gap_days([t["date"] for t in dated]) if dated else None
+    observed = _median_gap_days([t["date"] for t in dated]) if dated else None
+    cadence, gap_count = observed if observed else (None, 0)
     if cadence is None and tenure_days and order_count and order_count > 1:
+        # Spread the tenure over the known orders. It is a real observation, but a
+        # coarse one — count it as a single gap so it never poses as a rhythm.
         cadence = max(_MIN_CADENCE_DAYS, tenure_days / (order_count - 1))
+        gap_count = 1
 
     overdue_ratio = _safe_div(recency_days, cadence) if cadence else None
 
@@ -236,6 +244,10 @@ def _profile_one(rec: dict[str, Any], txs: list[dict[str, Any]], as_of: date) ->
         "tenure_days": tenure_days,
         "cadence_days": round(cadence, 1) if cadence else None,
         "overdue_ratio": round(overdue_ratio, 2) if overdue_ratio else None,
+        # What we actually saw, before segmentation decides whether it is enough
+        # to stand on its own or needs a cohort to back it up.
+        "observed_cycle_days": round(cadence, 1) if cadence else None,
+        "cycle_gap_count": gap_count,
         "frequency_per_year": round(frequency_per_year, 2) if frequency_per_year else None,
         "spend_growth": round(spend_growth, 3) if spend_growth is not None else None,
 

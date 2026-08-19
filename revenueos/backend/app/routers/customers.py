@@ -1,4 +1,9 @@
-"""Customer list, Customer 360 and AI narrative."""
+"""Customer list and Customer Detail.
+
+Customer Detail exists to answer one question in under ten seconds: *why is
+RevenueOS telling me to contact this person?* Every field on it is either that
+answer or the evidence behind it.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -6,23 +11,23 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from ..ai import analyst
-from ..analytics import matching
+from ..analytics import matching, segmentation
 from ..workspace import workspace
 
 router = APIRouter(tags=["customers"])
 
 SORTABLE = {"customer_score", "total_spend", "avg_order_value", "recency_days",
-            "overdue_ratio", "potential_annual_value", "order_count", "name"}
+            "cycle_position", "potential_annual_value", "order_count", "name"}
 
 
 @router.get("/customers")
 def list_customers(
     q: str = "",
-    segment: str = "",
+    value_tier: str = "",
+    lifecycle: str = "",
     store: str = "",
     sort: str = "customer_score",
     direction: str = "desc",
-    overdue_only: bool = False,
     contactable_only: bool = False,
     limit: int = Query(50, le=500),
     offset: int = 0,
@@ -32,21 +37,24 @@ def list_customers(
         needle = q.lower()
         rows = [p for p in rows if needle in p["name"].lower()
                 or needle in p["customer_id"].lower()]
-    if segment:
-        rows = [p for p in rows if (p.get("segment") or "") == segment]
+    # Value and lifecycle filter independently, because they are independent
+    # questions: "show me my VIPs" and "show me who is drifting" are not the same.
+    if value_tier:
+        rows = [p for p in rows if p.get("value_tier") == value_tier]
+    if lifecycle:
+        rows = [p for p in rows if p.get("lifecycle") == lifecycle]
     if store:
         rows = [p for p in rows if (p.get("store") or "") == store]
-    if overdue_only:
-        rows = [p for p in rows if (p.get("overdue_ratio") or 0) > 1.2]
     if contactable_only:
-        rows = [p for p in rows if p.get("marketing_consent") is True]
+        rows = [p for p in rows if p.get("contactable")]
 
     key = sort if sort in SORTABLE else "customer_score"
     reverse = direction != "asc"
     if key == "name":
         rows = sorted(rows, key=lambda p: p["name"].lower(), reverse=reverse)
     else:
-        rows = sorted(rows, key=lambda p: (p.get(key) is not None, p.get(key) or 0), reverse=reverse)
+        rows = sorted(rows, key=lambda p: (p.get(key) is not None, p.get(key) or 0),
+                      reverse=reverse)
 
     page = rows[offset:offset + limit]
     top_products = {}
@@ -62,21 +70,29 @@ def list_customers(
         "offset": offset,
         "limit": limit,
         "customers": [{
-            "customer_id": p["customer_id"], "name": p["name"], "segment": p.get("segment"),
-            "segment_tone": p.get("segment_tone"), "customer_score": p.get("customer_score"),
+            "customer_id": p["customer_id"], "name": p["name"],
+            "value_tier": p.get("value_tier"), "lifecycle": p.get("lifecycle"),
+            "segment": p.get("segment"),
+            "value_tone": p.get("value_tone"), "lifecycle_tone": p.get("lifecycle_tone"),
+            "customer_score": p.get("customer_score"),
             "total_spend": p.get("total_spend"), "order_count": p.get("order_count"),
             "avg_order_value": p.get("avg_order_value"), "last_purchase": p.get("last_purchase"),
-            "recency_days": p.get("recency_days"), "cadence_days": p.get("cadence_days"),
-            "overdue_ratio": p.get("overdue_ratio"), "store": p.get("store"),
-            "top_category": p.get("top_category"),
-            "contactable": p.get("marketing_consent") is True,
+            "recency_days": p.get("recency_days"), "cycle_days": p.get("cycle_days"),
+            "cycle_position": p.get("cycle_position"),
+            "cycle_confidence": p.get("cycle_confidence"),
+            "store": p.get("store"), "top_category": p.get("top_category"),
+            "contactable": p.get("contactable", False),
+            "suppression_reason": p.get("suppression_reason"),
             "data_confidence": p.get("data_confidence"),
             "crm_record": p.get("crm_record", True),
             "potential_annual_value": p.get("potential_annual_value"),
             "recommended_product": top_products[p["customer_id"]],
         } for p in page],
         "facets": {
-            "segments": sorted({p.get("segment") for p in workspace.profiles if p.get("segment")}),
+            "value_tiers": [t for t in segmentation.VALUE_TIERS
+                            if any(p.get("value_tier") == t for p in workspace.profiles)],
+            "lifecycles": [s for s in segmentation.LIFECYCLE_STAGES
+                           if any(p.get("lifecycle") == s for p in workspace.profiles)],
             "stores": sorted({p.get("store") for p in workspace.profiles if p.get("store")}),
         },
     }
@@ -90,9 +106,43 @@ def customer_detail(customer_id: str) -> dict[str, Any]:
 
     matches = matching.best_products_for_customer(profile, workspace.products, limit=6)
     transactions = workspace.customer_transactions(customer_id)
+    opps = [o for o in workspace.opportunities if o["customer_id"] == customer_id]
 
     return {
         "profile": profile,
+        # The answer, stated first and in the same words as the opportunity card,
+        # so the advisor never has to reconcile two versions of the reason.
+        "why_contact": ({
+            "headline": opps[0]["headline"],
+            "why_now": opps[0]["why_now"],
+            "evidence": opps[0]["evidence"],
+            "action": opps[0]["action"],
+            "product": opps[0].get("product"),
+            "contactable": opps[0]["contactable"],
+        } if opps else {
+            "headline": "No reason to contact them today",
+            "why_now": profile.get("lifecycle_basis"),
+            "evidence": None,
+            "action": "Nothing to do — they are within their normal buying rhythm.",
+            "product": None,
+            "contactable": profile.get("contactable", False),
+        }),
+        "value": {
+            "tier": profile.get("value_tier"),
+            "basis": profile.get("value_basis"),
+            "signals": profile.get("value_signals", []),
+            "percentile": profile.get("value_percentile"),
+        },
+        "lifecycle": {
+            "stage": profile.get("lifecycle"),
+            "basis": profile.get("lifecycle_basis"),
+            "confidence": profile.get("lifecycle_confidence"),
+            "cycle_days": profile.get("cycle_days"),
+            "cycle_basis": profile.get("cycle_basis"),
+            "cycle_confidence": profile.get("cycle_confidence"),
+            "cycle_position": profile.get("cycle_position"),
+        },
+        "eligibility": profile.get("eligibility"),
         "recommendations": [{
             **m, "expected_value": matching.expected_value(m, profile),
         } for m in matches],
@@ -110,9 +160,6 @@ def customer_detail(customer_id: str) -> dict[str, Any]:
             "discount": t.get("discount"),
             "store": t.get("store"),
         } for t in transactions[:80]],
-        "opportunities": [{
-            "id": o["id"], "title": o["title"], "type": o["type"], "action": o["action"],
-        } for o in workspace.opportunities if customer_id in (o.get("customer_ids") or [])],
     }
 
 
@@ -126,4 +173,5 @@ def customer_narrative(customer_id: str) -> dict[str, Any]:
 
 @router.get("/segments")
 def segments() -> dict[str, Any]:
-    return {"segments": workspace.summary.get("segments", [])}
+    """Value and lifecycle, reported as the two separate dimensions they are."""
+    return workspace.summary.get("segments", {"value": [], "lifecycle": [], "matrix": []})

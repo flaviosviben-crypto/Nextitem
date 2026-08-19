@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..analytics import matching
+from ..analytics import matching, opportunities as opp_engine
 from ..workspace import workspace
 from . import context_builder, prompts
 from .client import MAX_TOKENS, MODEL, get_client, is_available
@@ -129,17 +129,16 @@ def _fallback_answer(question: str) -> dict[str, Any]:
                                           "these figures are computed directly from your data."}
 
     if any(k in q for k in ("contact", "contattare", "reach out", "call", "who should")):
-        rows = sorted(
-            [p for p in workspace.profiles if (p.get("overdue_ratio") or 0) > 1.1],
-            key=lambda p: -((p.get("total_spend") or 0) * (p.get("overdue_ratio") or 1)))[:8]
+        # Answer from the same engine the advisor sees, so the analyst and the
+        # opportunity list can never give two different answers to one question.
+        rows = opp_engine.daily(workspace.opportunities)[:8]
         return rows_payload(
             "Customers to contact today",
-            [{"name": p["name"], "segment": p.get("segment"),
-              "reason": f"{p['overdue_ratio']:.1f}× past their usual cycle"
-              if p.get("overdue_ratio") else "Overdue",
-              "value": p.get("total_spend"), "contactable": p.get("marketing_consent") is True}
-             for p in rows],
-            f"{len(rows)} customers are past their normal repurchase window, ranked by value.")
+            [{"name": o["customer_name"], "segment": o.get("segment"),
+              "reason": o["why_now"], "product": (o.get("product") or {}).get("name"),
+              "value": o.get("influenced_value"), "contactable": o["contactable"]}
+             for o in rows],
+            f"{len(rows)} customers are worth a conversation today.")
 
     if any(k in q for k in ("stock", "inventory", "dead", "giacenza", "magazzino")):
         rows = [p for p in workspace.products if p.get("risk_class") in {"Dead Stock", "At Risk"}]
@@ -156,16 +155,18 @@ def _fallback_answer(question: str) -> dict[str, Any]:
     if any(k in q for k in ("opportunit", "revenue", "fatturato", "make more", "grow")):
         return rows_payload(
             "Ranked opportunities",
-            [{"title": o["title"], "impact": o["impact"], "score": o["score"],
-              "action": o["action"]} for o in workspace.opportunities[:6]],
+            [{"customer": o["customer_name"], "reason": o["why_now"],
+              "value": o.get("influenced_value"), "action": o["action"]}
+             for o in opp_engine.daily(workspace.opportunities)[:6]],
             f"{len(workspace.opportunities)} opportunities detected, worth an estimated "
-            f"€{summary.get('revenue_opportunity', 0):,.0f} in total.")
+            f"€{summary.get('revenue_opportunity', 0):,.0f} if acted on.")
 
     if any(k in q for k in ("vip", "best customer", "top customer", "migliori")):
         rows = sorted(workspace.profiles, key=lambda p: -(p.get("total_spend") or 0))[:8]
         return rows_payload(
             "Highest-value customers",
-            [{"name": p["name"], "segment": p.get("segment"), "spend": p.get("total_spend"),
+            [{"name": p["name"], "value_tier": p.get("value_tier"),
+              "lifecycle": p.get("lifecycle"), "spend": p.get("total_spend"),
               "last_purchase": p.get("last_purchase")} for p in rows],
             "Your highest-value customers by recorded spend.")
 
@@ -240,9 +241,11 @@ def executive_brief() -> dict[str, Any]:
         "summary": workspace.summary,
         "monthly_trend": trend,
         "top_opportunities": [{
-            "title": o["title"], "impact": o["impact"], "explanation": o["explanation"],
-            "action": o["action"], "score": o["score"],
-        } for o in workspace.opportunities[:6]],
+            "customer_id": o["customer_id"], "trigger": o["trigger"],
+            "headline": o["headline"], "why_now": o["why_now"],
+            "influenced_value": o.get("influenced_value"),
+            "action": o["action"], "priority": o["priority"],
+        } for o in opp_engine.daily(workspace.opportunities)[:6]],
         "data_health": {"score": (workspace.quality or {}).get("score"),
                         "summary": (workspace.quality or {}).get("summary")},
     }, ensure_ascii=False, default=str)
@@ -269,7 +272,8 @@ def campaign_copy(campaign: dict[str, Any]) -> dict[str, Any]:
         "goal": campaign.get("goal"),
         "criteria": campaign.get("criteria"),
         "audience_size": len(audience),
-        "audience_sample": [{"segment": a.get("segment"), "top_category": a.get("top_category")}
+        "audience_sample": [{"value_tier": a.get("value_tier"), "lifecycle": a.get("lifecycle"),
+                             "top_category": a.get("top_category")}
                             for a in audience[:8]],
         "products": campaign.get("products", [])[:5],
         "estimated_value": campaign.get("estimated_value"),

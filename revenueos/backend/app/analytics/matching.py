@@ -385,7 +385,8 @@ def best_customers_for_product(
     consented_only: bool = False,
     min_score: float = 0.4,
 ) -> list[dict[str, Any]]:
-    pool = [c for c in customers if not consented_only or c.get("marketing_consent") is True]
+    # Eligibility is resolved once, by the compliance layer; matching just honours it.
+    pool = [c for c in customers if not consented_only or c.get("contactable")]
     scored = [score_pair(c, product, require_stock) for c in pool]
     live = [m for m in scored if m and m["score"] >= min_score]
     live.sort(key=lambda m: -m["score"])
@@ -401,6 +402,6 @@ def expected_value(match: dict[str, Any], customer: dict[str, Any]) -> float | N
         return None
     # Match score maps to a deliberately conservative conversion band (4%–32%).
     probability = 0.04 + 0.28 * min(1.0, match["score"])
-    if customer.get("marketing_consent") is not True:
-        probability *= 0.6      # cannot contact them directly yet
+    if not customer.get("contactable"):
+        probability *= 0.6      # no permitted channel: only a shop-floor encounter
     return round(price * probability, 2)

@@ -193,7 +193,7 @@ def simulate_outreach(profiles: list[dict[str, Any]], customer_ids: list[str],
     if not chosen:
         return {"error": "No matching customers."}
 
-    reachable = [p for p in chosen if p.get("marketing_consent") is True]
+    reachable = [p for p in chosen if p.get("contactable")]
     baskets = [p.get("avg_order_value") for p in chosen if p.get("avg_order_value")]
     avg_basket = statistics.mean(baskets) if baskets else None
     rate = max(0.01, min(0.6, conversion_rate))

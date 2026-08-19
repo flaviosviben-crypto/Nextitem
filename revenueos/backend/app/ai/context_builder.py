@@ -28,7 +28,8 @@ def customer_context(profile: dict[str, Any], matches: list[dict[str, Any]],
     return {
         "customer": minimise({
             "name": profile.get("name"),
-            "segment": profile.get("segment"),
+            "value_tier": profile.get("value_tier"),
+            "lifecycle": profile.get("lifecycle"),
             "customer_score": profile.get("customer_score"),
             "total_spend": profile.get("total_spend"),
             "spend_source": profile.get("spend_source"),
@@ -37,8 +38,9 @@ def customer_context(profile: dict[str, Any], matches: list[dict[str, Any]],
             "first_purchase": profile.get("first_purchase"),
             "last_purchase": profile.get("last_purchase"),
             "days_since_purchase": profile.get("recency_days"),
-            "typical_cycle_days": profile.get("cadence_days"),
-            "overdue_ratio": profile.get("overdue_ratio"),
+            "typical_cycle_days": profile.get("cycle_days"),
+            "cycle_confidence": profile.get("cycle_confidence"),
+            "cycle_position": profile.get("cycle_position"),
             "purchases_per_year": profile.get("frequency_per_year"),
             "spend_growth": profile.get("spend_growth"),
             "category_affinity": profile.get("category_affinity"),
@@ -48,7 +50,7 @@ def customer_context(profile: dict[str, Any], matches: list[dict[str, Any]],
             "price_band": [profile.get("price_low"), profile.get("price_high")],
             "discount_share": profile.get("discount_share"),
             "store": profile.get("store"),
-            "contactable": profile.get("marketing_consent") is True,
+            "contactable": profile.get("contactable", False),
             "data_confidence": profile.get("data_confidence"),
         }),
         "recommended_products": [{
@@ -88,11 +90,14 @@ def describe_customer(profile: dict[str, Any], matches: list[dict[str, Any]]) ->
     name = (profile.get("name") or "This customer").split()[0]
     bits: list[str] = []
 
-    segment = profile.get("segment")
+    tier = profile.get("value_tier")
+    stage = profile.get("lifecycle")
     spend = profile.get("total_spend")
     orders = profile.get("order_count")
-    if segment and segment != "Unclassified":
-        opener = f"{name} is {_segment_phrase(segment)} customer"
+    if tier:
+        opener = f"{name} is {_segment_phrase(tier)} customer"
+        if stage:
+            opener += f", currently {stage.lower()} in their buying cycle"
         if spend:
             opener += f" with {_eur(spend)} of recorded spend"
             if orders:
@@ -103,16 +108,17 @@ def describe_customer(profile: dict[str, Any], matches: list[dict[str, Any]]) ->
     else:
         bits.append(f"{name} has no recorded spend yet.")
 
-    cadence = profile.get("cadence_days")
+    cycle = profile.get("cycle_days")
     recency = profile.get("recency_days")
-    overdue = profile.get("overdue_ratio")
-    if cadence and recency is not None:
-        if overdue and overdue >= 1.3:
-            bits.append(f"They normally buy every {cadence:.0f} days but it has been "
-                        f"{_days(recency)} — {overdue:.1f}× their usual cycle.")
-        else:
-            bits.append(f"They buy roughly every {cadence:.0f} days; last purchase was "
-                        f"{_days(recency)} ago.")
+    position = profile.get("cycle_position")
+    # Say how sure we are of the cycle in the same breath as the cycle itself,
+    # so a number inferred from a cohort never reads as this customer's own habit.
+    hedge = {"High": "", "Medium": " (estimated)",
+             "Low": " (inferred from similar customers)"}.get(
+        profile.get("cycle_confidence") or "", "")
+    if cycle and recency is not None and position:
+        bits.append(f"They buy roughly every {cycle:.0f} days{hedge}; their last purchase "
+                    f"was {_days(recency)} ago — {position:.0%} through that cycle.")
     elif recency is not None:
         bits.append(f"Their last purchase was {_days(recency)} ago.")
 
@@ -134,8 +140,11 @@ def describe_customer(profile: dict[str, Any], matches: list[dict[str, Any]]) ->
         top = matches[0]
         bits.append(f"Best current match: {top['product_name']} at {top['match_pct']}%.")
 
-    if profile.get("marketing_consent") is not True:
-        bits.append("Marketing consent is not on file, so outreach is blocked until confirmed.")
+    elig = profile.get("eligibility") or {}
+    if elig.get("status") == "Suppressed":
+        bits.append(f"Outreach is blocked: {elig.get('reason')}")
+    elif profile.get("contact_channels"):
+        bits.append("Permitted channels: " + ", ".join(profile["contact_channels"]) + ".")
 
     return " ".join(bits)
 
@@ -143,15 +152,26 @@ def describe_customer(profile: dict[str, Any], matches: list[dict[str, Any]]) ->
 def describe_actions(profile: dict[str, Any], matches: list[dict[str, Any]]) -> list[str]:
     """Next best actions derived from the metrics, without a model."""
     actions: list[str] = []
-    if profile.get("marketing_consent") is not True:
-        actions.append("Confirm marketing consent before any outreach.")
+    elig = profile.get("eligibility") or {}
+    if elig.get("status") == "Suppressed":
+        # Nothing below this line may suggest reaching out. A suppressed customer
+        # gets one honest instruction, not a list of contradictory ones.
+        return [f"Do not contact. {elig.get('reason') or 'No permitted channel on file.'}"]
 
-    overdue = profile.get("overdue_ratio") or 0
-    cadence = profile.get("cadence_days")
-    if overdue >= 1.3 and cadence:
-        actions.append(f"Contact this week — {overdue:.1f}× past their {cadence:.0f}-day cycle.")
-    elif overdue >= 0.8:
-        actions.append("They are due about now; a personal note is well timed.")
+    # Timing comes from the lifecycle stage alone, so the advice can never
+    # disagree with the badge the advisor is looking at.
+    stage = profile.get("lifecycle")
+    cycle = profile.get("cycle_days")
+    against = f" against their {cycle:.0f}-day cycle" if cycle else ""
+    if stage == "Due":
+        actions.append(f"Contact this week — they are at their repurchase point{against}.")
+    elif stage == "At Risk":
+        actions.append(f"Contact now — they have drifted past their usual rhythm{against}.")
+    elif stage == "Lost":
+        actions.append("Win-back conversation — they need a real reason to return, "
+                       "not a routine follow-up.")
+    else:
+        actions.append("No need to chase — they are inside their normal buying rhythm.")
 
     if matches:
         top = matches[0]
@@ -165,7 +185,7 @@ def describe_actions(profile: dict[str, Any], matches: list[dict[str, Any]]) -> 
     elif (profile.get("discount_share") or 0) >= 0.6:
         actions.append("Time outreach to the sale cycle; they buy on promotion.")
 
-    if profile.get("segment") in {"VIP", "Champions"}:
+    if profile.get("value_tier") == "VIP":
         actions.append("Invite to the next private preview.")
 
     return actions[:4] or ["Not enough history yet — capture more purchase detail."]

@@ -17,7 +17,14 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from .analytics import customer_scoring, inventory as inventory_analytics, opportunities as opp_engine, rfm
+from .analytics import (
+    compliance,
+    customer_scoring,
+    inventory as inventory_analytics,
+    opportunities as opp_engine,
+    performance,
+    segmentation,
+)
 from .data import cleaning, ingestion, mapping as mapping_mod, validation
 from .data.schema import Kind
 from .demo import generator
@@ -67,6 +74,14 @@ class Workspace:
             self.pipeline: list[dict[str, Any]] = []
             self.quality: dict[str, Any] | None = None
             self.summary: dict[str, Any] = {}
+            self.performance: dict[str, Any] = {}
+            # Every advisor decision is written down. Outreach without an audit
+            # trail is not something a luxury house will put its name to.
+            self.audit_log: list[dict[str, Any]] = []
+            # Lifecycle boundaries are a setting, not a law of retail: a jeweller
+            # and a denim store do not share a definition of "overdue".
+            self.lifecycle_thresholds: dict[str, float] = dict(
+                segmentation.LIFECYCLE_THRESHOLDS)
             self.computed_at: str | None = None
 
     @property
@@ -195,35 +210,40 @@ class Workspace:
             inventory = self.inventory_raw
 
             profiles = customer_scoring.build_profiles(customers, transactions)
-            profiles = rfm.assign_segments(profiles)
+            # Value and lifecycle are resolved separately, then eligibility, so the
+            # opportunity engine never has to guess at any of the three.
+            profiles = segmentation.classify(profiles, self.lifecycle_thresholds)
+            profiles = compliance.apply(profiles)
             products = inventory_analytics.build_product_stats(inventory, transactions)
             quality = validation.analyse(customers, transactions, inventory)
             opps = opp_engine.detect(profiles, products, transactions)
 
             base = customer_scoring.summarize_base(profiles)
             inv = inventory_analytics.inventory_summary(products)
-            # Headline figure is probability-weighted: what the boutique can
-            # realistically expect to capture, not the sum of every best case.
-            revenue_opportunity = sum(o.get("expected_value") or 0 for o in opps)
+            actionable = [o for o in opps if o["contactable"]]
+            # The headline is what today's list is realistically worth — the sum of
+            # per-opportunity influenced value, not a best case across the base.
+            revenue_opportunity = sum(o.get("influenced_value") or 0 for o in actionable)
 
             self.profiles = profiles
             self.products = products
             self.opportunities = opps
             self.quality = quality.to_dict()
             self.pipeline = _merge_pipeline(self.pipeline, opp_engine.pipeline_defaults(opps))
+            self.performance = performance.report(self.pipeline, transactions)
             self.summary = {
                 "source": self.source,
                 "customers": base,
                 "inventory": inv,
-                "segments": rfm.segment_summary(profiles),
+                "segments": segmentation.summarize(profiles),
+                "compliance": compliance.summarize(profiles),
                 "revenue_opportunity": round(revenue_opportunity, 2),
                 "opportunities": len(opps),
+                "actionable_opportunities": len(actionable),
+                "suppressed_opportunities": len(opps) - len(actionable),
                 "high_confidence_matches": sum(
-                    1 for o in opps for e in o.get("entities", [])
-                    if (e.get("match_pct") or 0) >= 75),
-                "customers_to_contact": len({
-                    e["id"] for o in opps for e in o.get("entities", [])
-                    if e.get("type") == "customer" and e.get("contactable")}),
+                    1 for o in opps if ((o.get("product") or {}).get("match_pct") or 0) >= 75),
+                "customers_to_contact": len({o["customer_id"] for o in actionable}),
                 "data_health": quality.score,
                 "counts": {
                     "customers": len(profiles),
@@ -233,6 +253,27 @@ class Workspace:
             }
             self.computed_at = datetime.utcnow().isoformat(timespec="seconds")
         self.save()
+
+    def refresh_performance(self) -> None:
+        """Recompute the performance report after an advisor acts.
+
+        Cheap enough to run on every decision, and it means the Performance page
+        never lags behind what the advisor just did.
+        """
+        with self._lock:
+            self.performance = performance.report(self.pipeline, self.transactions_raw)
+
+    def audit(self, row_id: str, status: str, note: str | None = None,
+              actor: str = "advisor") -> None:
+        with self._lock:
+            self.audit_log.insert(0, {
+                "at": datetime.utcnow().isoformat(timespec="seconds"),
+                "action_id": row_id,
+                "status": status,
+                "note": note,
+                "actor": actor,
+            })
+            self.audit_log = self.audit_log[:2000]
 
     # ------------------------------------------------------------- accessors --
     def profile(self, customer_id: str) -> dict[str, Any] | None:
@@ -257,6 +298,8 @@ class Workspace:
                 "mappings": self.mappings,
                 "imports": [i.__dict__ for i in self.imports],
                 "pipeline": self.pipeline,
+                "lifecycle_thresholds": self.lifecycle_thresholds,
+                "audit_log": self.audit_log,
             }
             SNAPSHOT.write_text(json.dumps(payload, default=_json_default))
         except OSError:
@@ -288,6 +331,9 @@ class Workspace:
             self.mappings = payload.get("mappings", {})
             self.imports = [ImportRecord(**i) for i in payload.get("imports", [])]
             self.pipeline = payload.get("pipeline", [])
+            self.lifecycle_thresholds = {**segmentation.LIFECYCLE_THRESHOLDS,
+                                         **payload.get("lifecycle_thresholds", {})}
+            self.audit_log = payload.get("audit_log", [])
             self.source = payload.get("source", "restored")
         if self.customers_raw or self.transactions_raw or self.inventory_raw:
             self.recompute()

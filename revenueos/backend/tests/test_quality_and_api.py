@@ -87,13 +87,18 @@ def test_customer_list_and_detail(client):
     listing = client.get("/api/customers?limit=5").json()
     assert listing["total"] > 0
     assert len(listing["customers"]) == 5
-    assert listing["facets"]["segments"]
+    assert listing["facets"]["value_tiers"]
+    assert listing["facets"]["lifecycles"]
 
     cid = listing["customers"][0]["customer_id"]
     detail = client.get(f"/api/customers/{cid}").json()
     assert detail["profile"]["customer_id"] == cid
     assert isinstance(detail["recommendations"], list)
     assert isinstance(detail["timeline"], list)
+    # Customer Detail must answer "why am I being told to contact them?" outright.
+    assert detail["why_contact"]["headline"]
+    assert detail["value"]["basis"], "the value tier must state its evidence"
+    assert detail["lifecycle"]["basis"], "the lifecycle stage must state its evidence"
 
 
 def test_recommendations_are_explained(client):
@@ -126,30 +131,51 @@ def test_product_endpoints(client):
     assert overview["ageing"]
 
 
-def test_opportunities_and_pipeline(client):
-    opps = client.get("/api/opportunities").json()
-    assert opps["total"] > 0
-
-    pipeline = client.get("/api/pipeline").json()
-    assert pipeline["statuses"][0] == "New"
-    if pipeline["rows"]:
-        row_id = pipeline["rows"][0]["id"]
-        updated = client.patch(f"/api/pipeline/{row_id}",
-                               json={"status": "Contacted", "note": "Called"}).json()
-        assert updated["status"] == "Contacted"
-        assert updated["note"] == "Called"
-
-        bad = client.patch(f"/api/pipeline/{row_id}", json={"status": "Nonsense"})
-        assert bad.status_code == 400
+def test_todays_opportunities_answer_the_five_questions(client):
+    body = client.get("/api/opportunities").json()
+    assert body["shown"] > 0
+    assert body["shown"] <= 20, "the daily list has a ceiling an advisor can work through"
+    for o in body["opportunities"]:
+        assert o["customer_name"]                      # who
+        assert o["why_now"]                            # why now
+        assert o["action"]                             # how to act
+        assert o["contactable"] is True, "the daily list only contains reachable customers"
+        if o["product"]:
+            assert o["product"]["why"], "why this product must be explained"
 
 
-def test_briefing_is_actionable(client):
-    body = client.get("/api/briefing").json()
+def test_action_center_records_every_decision(client):
+    actions = client.get("/api/actions").json()
+    assert actions["statuses"] == ["New", "Approved", "Scheduled", "Contacted",
+                                   "Converted", "Ignored"]
+    row_id = actions["rows"][0]["id"]
+    updated = client.patch(f"/api/actions/{row_id}",
+                           json={"status": "Contacted", "note": "Called"}).json()
+    assert updated["status"] == "Contacted"
+    assert updated["note"] == "Called"
+
+    audit = client.get("/api/audit").json()
+    assert any(e["action_id"] == row_id and e["status"] == "Contacted"
+               for e in audit["entries"]), "every decision must reach the audit log"
+
+    bad = client.patch(f"/api/actions/{row_id}", json={"status": "Nonsense"})
+    assert bad.status_code == 400
+
+
+def test_overview_points_at_todays_work(client):
+    body = client.get("/api/overview").json()
     assert body["loaded"] is True
-    assert "headline" in body
-    assert isinstance(body["priorities"], list)
-    for row in body["contact_today"]:
-        assert row["reason"], "every suggested contact must carry a reason"
+    assert body["today"]["note"], "the day must be described in words, not just a count"
+    assert body["today"]["opportunities"] == len(body["today"]["top"]) or body["today"]["top"]
+    for row in body["today"]["top"]:
+        assert row["why_now"], "every suggested contact must carry a reason"
+
+
+def test_performance_separates_observed_from_estimated(client):
+    body = client.get("/api/performance").json()
+    assert body["contacted_revenue"] >= body["influenced_revenue"]
+    assert "modelled, not measured" in body["incremental_revenue_basis"].lower()
+    assert body["attribution_note"]
 
 
 def test_upload_maps_and_imports_a_real_csv(client):

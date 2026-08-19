@@ -31,20 +31,22 @@ def _slim_customer(p: dict[str, Any]) -> dict[str, Any]:
     return {
         "customer_id": p["customer_id"],
         "name": p["name"],
-        "segment": p.get("segment"),
+        "value_tier": p.get("value_tier"),
+        "lifecycle": p.get("lifecycle"),
         "customer_score": p.get("customer_score"),
         "total_spend": p.get("total_spend"),
         "orders": p.get("order_count"),
         "avg_order_value": p.get("avg_order_value"),
         "last_purchase": p.get("last_purchase"),
         "days_since_purchase": p.get("recency_days"),
-        "typical_cycle_days": p.get("cadence_days"),
-        "overdue_ratio": p.get("overdue_ratio"),
+        "typical_cycle_days": p.get("cycle_days"),
+        "cycle_confidence": p.get("cycle_confidence"),
+        "cycle_position": p.get("cycle_position"),
         "top_category": p.get("top_category"),
         "top_brand": p.get("top_brand"),
         "price_band": [p.get("price_low"), p.get("price_high")],
         "store": p.get("store"),
-        "contactable": p.get("marketing_consent") is True,
+        "contactable": p.get("contactable", False),
         "data_confidence": p.get("data_confidence"),
     }
 
@@ -111,25 +113,28 @@ def list_customers(
     """List customers ranked by a metric, optionally filtered.
 
     Args:
-        segment: Restrict to one segment, e.g. "VIP", "At Risk", "Sleeping". Empty means all.
-        sort_by: One of "customer_score", "total_spend", "overdue_ratio", "recency_days",
+        segment: Restrict by value tier ("VIP", "Promising", "Standard") or by lifecycle
+            stage ("Active", "Due", "At Risk", "Lost"). Empty means all.
+        sort_by: One of "customer_score", "total_spend", "cycle_position", "recency_days",
             "potential_annual_value", "avg_order_value".
         limit: How many customers to return (max 40).
-        overdue_only: Only customers past their normal repurchase cycle.
-        contactable_only: Only customers with marketing consent on file.
+        overdue_only: Only customers at or past their repurchase point.
+        contactable_only: Only customers with a permitted contact channel.
     """
     if not workspace.is_loaded:
         return _no_data()
     rows = workspace.profiles
     if segment:
-        rows = [p for p in rows if (p.get("segment") or "").lower() == segment.strip().lower()]
+        needle = segment.strip().lower()
+        rows = [p for p in rows if needle in {(p.get("value_tier") or "").lower(),
+                                              (p.get("lifecycle") or "").lower()}]
     if overdue_only:
-        rows = [p for p in rows if (p.get("overdue_ratio") or 0) > 1.2]
+        rows = [p for p in rows if p.get("lifecycle") in {"Due", "At Risk", "Lost"}]
     if contactable_only:
-        rows = [p for p in rows if p.get("marketing_consent") is True]
+        rows = [p for p in rows if p.get("contactable")]
 
     key = sort_by if sort_by in {
-        "customer_score", "total_spend", "overdue_ratio", "recency_days",
+        "customer_score", "total_spend", "cycle_position", "recency_days",
         "potential_annual_value", "avg_order_value"} else "customer_score"
     rows = sorted(rows, key=lambda p: (p.get(key) is not None, p.get(key) or 0), reverse=True)
     return _json({
@@ -235,25 +240,29 @@ def find_customers_for_product(sku: str, limit: int = 10, contactable_only: bool
 
 @beta_tool
 def list_opportunities(opportunity_type: str = "", limit: int = 8) -> str:
-    """The ranked commercial opportunities RevenueOS has detected.
+    """The customers RevenueOS says are worth a conversation, and why.
 
     Args:
-        opportunity_type: Filter by type, e.g. "overdue_vip", "dead_stock", "new_arrival",
-            "reactivation", "cross_sell", "category_momentum". Empty means all.
+        opportunity_type: Filter by trigger — "due", "at_risk", "win_back",
+            "new_arrival", "cross_sell", "restock_affinity". Empty means all.
         limit: How many to return (max 20).
     """
     if not workspace.is_loaded:
         return _no_data()
     rows = workspace.opportunities
     if opportunity_type:
-        rows = [o for o in rows if o["type"] == opportunity_type.strip().lower()]
+        rows = [o for o in rows if o["trigger"] == opportunity_type.strip().lower()]
     return _json([{
-        "id": o["id"], "type": o["type"], "title": o["title"],
-        "explanation": o["explanation"], "impact_eur": o["impact"],
-        "impact_basis": o["impact_basis"], "score": o["score"],
-        "action": o["action"],
-        "customers_involved": len([e for e in o.get("entities", []) if e.get("type") == "customer"]),
-        "example_entities": [e.get("name") for e in o.get("entities", [])[:5]],
+        "id": o["id"], "trigger": o["trigger"], "customer_id": o["customer_id"],
+        "value_tier": o.get("value_tier"), "lifecycle": o.get("lifecycle"),
+        "headline": o["headline"], "why_now": o["why_now"],
+        "product": (o.get("product") or {}).get("name"),
+        "match_pct": (o.get("product") or {}).get("match_pct"),
+        "influenced_value_eur": o.get("influenced_value"),
+        "incremental_value_eur": o.get("incremental_value"),
+        "value_basis": o.get("value_basis"),
+        "priority": o["priority"], "action": o["action"],
+        "contactable": o["contactable"],
     } for o in rows[:max(1, min(limit, 20))]])
 
 
