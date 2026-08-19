@@ -1,0 +1,66 @@
+# RevenueOS deployment blueprint.
+#
+# Render reads this file from the repo root and creates both services. The whole
+# deployment lives here rather than in a dashboard, so it can be reviewed in a
+# diff and recreated from scratch by pointing Render at this repo again.
+#
+# Architecture note that explains the shape of this file: the browser only ever
+# calls /api on the frontend's own origin. next.config.mjs rewrites that to the
+# backend server-side. So the frontend is the public product, the API is a
+# dependency of it, and BACKEND_HOST below is the only wire between them.
+services:
+  # ----------------------------------------------------------------- API ---
+  - type: web
+    name: revenueos-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: revenueos/backend
+    branch: claude/startup-code-review-phxm28
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    # Render assigns the port at runtime; binding to a fixed 8000 would make the
+    # service unreachable and the health check would never pass.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # The free plan has no persistent disk, so the workspace snapshot does not
+      # survive a restart. Seeding the demo keeps the public URL demonstrable
+      # instead of showing an empty state after every deploy.
+      - key: SEED_DEMO_ON_EMPTY
+        value: "true"
+      # Optional. Only needed if something calls the API from another origin
+      # directly — the frontend does not, it proxies server-side.
+      - key: CORS_ORIGINS
+        sync: false
+      # Optional. Enables the conversational analyst; every other surface works
+      # without it. Set it in the Render dashboard, never in this file.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  # ------------------------------------------------------------ frontend ---
+  - type: web
+    name: revenueos-web
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: revenueos/frontend
+    branch: claude/startup-code-review-phxm28
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20.11.1"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # Resolved by Render to the API's real hostname, including any suffix it
+      # adds if the name is taken. Nothing to paste, nothing to keep in sync.
+      - key: BACKEND_HOST
+        fromService:
+          type: web
+          name: revenueos-api
+          property: host

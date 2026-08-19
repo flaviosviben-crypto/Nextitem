@@ -225,6 +225,11 @@ endpoint reads the cache. Recomputation happens on import, not per request.
 
 ## Running it
 
+### Deployed
+
+RevenueOS deploys to Render from `render.yaml`; see [DEPLOYMENT.md](DEPLOYMENT.md)
+for the setup, the environment variables and how to verify a release.
+
 ### Docker (one command)
 
 ```bash
