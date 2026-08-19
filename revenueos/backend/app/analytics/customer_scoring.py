@@ -44,13 +44,25 @@ def _dominant(shares: dict[str, float]) -> tuple[str | None, float | None]:
     return (label, share) if share >= _MIN_AFFINITY_SHARE else (label, share)
 
 
+# No fashion customer genuinely repurchases faster than this. Two visits in one
+# week are one shopping occasion, not a two-day buying cycle — without a floor a
+# customer like that reads as "215x overdue" and dominates every ranking.
+_MIN_CADENCE_DAYS = 14.0
+_MIN_CADENCE_SINGLE_GAP = 21.0
+
+
 def _median_gap_days(dates: list[date]) -> float | None:
-    """Median spacing between distinct purchase days."""
+    """Median spacing between distinct purchase days, floored to stay believable."""
     uniq = sorted(set(dates))
     if len(uniq) < 2:
         return None
     gaps = [(b - a).days for a, b in zip(uniq, uniq[1:]) if 0 < (b - a).days < 1095]
-    return float(statistics.median(gaps)) if gaps else None
+    if not gaps:
+        return None
+    median = float(statistics.median(gaps))
+    # One gap is an anecdote, not a cadence: hold it to a wider floor.
+    floor = _MIN_CADENCE_DAYS if len(gaps) >= 2 else _MIN_CADENCE_SINGLE_GAP
+    return max(floor, median)
 
 
 def build_profiles(
@@ -116,7 +128,7 @@ def _profile_one(rec: dict[str, Any], txs: list[dict[str, Any]], as_of: date) ->
 
     cadence = _median_gap_days([t["date"] for t in dated]) if dated else None
     if cadence is None and tenure_days and order_count and order_count > 1:
-        cadence = tenure_days / (order_count - 1)
+        cadence = max(_MIN_CADENCE_DAYS, tenure_days / (order_count - 1))
 
     overdue_ratio = _safe_div(recency_days, cadence) if cadence else None
 

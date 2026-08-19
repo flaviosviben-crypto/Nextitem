@@ -174,3 +174,22 @@ def test_portfolio_summary_handles_empty_dataset():
     summary = customer_scoring.summarize_base([])
     assert summary["customers"] == 0
     assert summary["total_spend"] is None
+
+
+def test_cadence_has_a_believable_floor():
+    """Two purchases a day apart must not read as a one-day buying cycle.
+
+    Without a floor such a customer scores as hundreds of times overdue and
+    dominates every ranking ahead of genuinely valuable clients.
+    """
+    txs = [_tx("C1", 216, 300, order="a"), _tx("C1", 215, 300, order="b")]
+    p = customer_scoring.build_profiles([{"customer_id": "C1", "name": "Burst"}], txs, TODAY)[0]
+    assert p["cadence_days"] >= 14
+    assert p["overdue_ratio"] < 20, "a burst of visits must not produce an absurd overdue ratio"
+
+
+def test_normal_cadence_is_not_distorted_by_the_floor():
+    txs = [_tx("C1", 300, 500, order="a"), _tx("C1", 200, 500, order="b"),
+           _tx("C1", 100, 500, order="c")]
+    p = customer_scoring.build_profiles([{"customer_id": "C1", "name": "Steady"}], txs, TODAY)[0]
+    assert p["cadence_days"] == 100
