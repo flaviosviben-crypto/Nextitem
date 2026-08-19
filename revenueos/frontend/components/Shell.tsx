@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   BarChart3,
   CheckSquare,
@@ -15,7 +15,7 @@ import {
   Target,
   Users,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, apiIsSlow, subscribeApiSlow } from "@/lib/api";
 import { Badge } from "./ui";
 
 // Six destinations, in the order the work actually happens: see the day, work
@@ -303,6 +303,33 @@ export function PageHeader({
   );
 }
 
+/**
+ * Banner shown while any request is taking suspiciously long.
+ *
+ * Every screen renders skeletons while it waits, and a grid of grey blocks is
+ * indistinguishable from an app that is simply broken — which is exactly how a
+ * sleeping free-plan API presents itself for the first minute of the day.
+ * Saying so is the difference between waiting and giving up.
+ */
+function SlowApiBanner() {
+  const slow = useSyncExternalStore(subscribeApiSlow, apiIsSlow, () => false);
+  if (!slow) return null;
+  return (
+    <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-[var(--line)] bg-[var(--raised)] px-3.5 py-2.5 text-[13px] text-[var(--muted)]">
+      <span className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--accent)]" />
+      <span>
+        Waiting for the RevenueOS API. A free-plan service sleeps after 15 minutes of
+        inactivity and can take up to a minute to wake.
+      </span>
+    </div>
+  );
+}
+
 export function Page({ children }: { children: ReactNode }) {
-  return <div className="mx-auto max-w-[1360px] px-5 py-7 lg:px-8">{children}</div>;
+  return (
+    <div className="mx-auto max-w-[1360px] px-5 py-7 lg:px-8">
+      <SlowApiBanner />
+      {children}
+    </div>
+  );
 }

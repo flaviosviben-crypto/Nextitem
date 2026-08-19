@@ -43,7 +43,11 @@ async function proxy(req: NextRequest, ctx: { params: { path: string[] } }) {
     method: req.method,
     headers: clean(req.headers),
     redirect: "manual",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    // Node 18+ has this; guarded so an older runtime degrades to no timeout
+    // rather than failing every request outright.
+    signal: typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(TIMEOUT_MS)
+      : undefined,
   };
   if (req.method !== "GET" && req.method !== "HEAD") {
     // Buffering keeps CSV uploads (multipart) intact and avoids needing a

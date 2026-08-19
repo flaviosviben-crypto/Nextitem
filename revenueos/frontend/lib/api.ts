@@ -12,15 +12,45 @@ export class ApiError extends Error {
   }
 }
 
+/** A sleeping free-plan API can take about a minute to wake; beyond this it is down. */
+const REQUEST_TIMEOUT_MS = 115_000;
+
+/**
+ * A timeout signal where the browser supports one.
+ *
+ * AbortSignal.timeout arrived in Safari 16. Calling it unguarded would throw
+ * before the request was even made, turning a nicety into a total outage for
+ * anyone on an older browser — the opposite of the robustness intended here.
+ */
+function timeoutSignal(): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    : undefined;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+        ...(init?.headers || {}),
+      },
+      cache: "no-store",
+      signal: timeoutSignal(),
+    });
+  } catch (err) {
+    // A timeout or a dropped connection must become a message, never an
+    // indefinite wait: the caller has no other way to tell the two apart.
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    throw new ApiError(
+      timedOut
+        ? "The RevenueOS API did not respond in time. If it is hosted on a free plan it may be asleep — wait a moment and try again."
+        : "Could not reach the RevenueOS API. Check that the API service is running.",
+      0,
+    );
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -46,11 +76,36 @@ export const api = {
     request<T>(path, { method: "POST", body: form }),
 };
 
+/** How long a wait may stay silent before the UI owes the user an explanation. */
+const SLOW_AFTER_MS = 5_000;
+
+// A tiny store of "is anything taking suspiciously long", so the shell can say
+// so once for the whole app. Every screen fetches, and a grid of grey blocks on
+// every one of them is indistinguishable from an app that is simply broken.
+let slowRequests = 0;
+const slowListeners = new Set<() => void>();
+
+function setSlowCount(next: number) {
+  slowRequests = Math.max(0, next);
+  slowListeners.forEach((fn) => fn());
+}
+
+export function subscribeApiSlow(fn: () => void): () => void {
+  slowListeners.add(fn);
+  return () => slowListeners.delete(fn);
+}
+
+export function apiIsSlow(): boolean {
+  return slowRequests > 0;
+}
+
 /** Fetch-on-mount with loading/error state and a manual refresh. */
 export function useApi<T>(path: string | null, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(Boolean(path));
   const [error, setError] = useState<string | null>(null);
+  // True once a request has run long enough that silence needs explaining.
+  const [slow, setSlow] = useState(false);
   const latest = useRef(0);
 
   const load = useCallback(async () => {
@@ -61,6 +116,15 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
     const ticket = ++latest.current;
     setLoading(true);
     setError(null);
+    setSlow(false);
+    let counted = false;
+    const slowTimer = setTimeout(() => {
+      if (ticket === latest.current) {
+        setSlow(true);
+        counted = true;
+        setSlowCount(slowRequests + 1);
+      }
+    }, SLOW_AFTER_MS);
     try {
       const result = await api.get<T>(path);
       if (ticket === latest.current) setData(result);
@@ -70,7 +134,12 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
         setError(err instanceof Error ? err.message : "Request failed");
       }
     } finally {
-      if (ticket === latest.current) setLoading(false);
+      clearTimeout(slowTimer);
+      if (counted) setSlowCount(slowRequests - 1);
+      if (ticket === latest.current) {
+        setLoading(false);
+        setSlow(false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, ...deps]);
@@ -79,7 +148,7 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
     load();
   }, [load]);
 
-  return { data, loading, error, refresh: load, setData };
+  return { data, loading, slow, error, refresh: load, setData };
 }
 
 // ------------------------------------------------------------------ types ---
