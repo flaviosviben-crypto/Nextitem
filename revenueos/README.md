@@ -238,6 +238,12 @@ Open <http://localhost:3000>.
 ### Local
 
 ```bash
+cd revenueos && ./dev.sh     # starts both, and refuses to start on a busy port
+```
+
+Or by hand:
+
+```bash
 # backend
 cd revenueos/backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
