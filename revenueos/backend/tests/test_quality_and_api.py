@@ -178,6 +178,22 @@ def test_performance_separates_observed_from_estimated(client):
     assert body["attribution_note"]
 
 
+def test_a_recorded_sale_is_never_presented_as_incremental(client):
+    """We may claim only part of a sale as caused by RevenueOS, never all of it."""
+    actions = client.get("/api/actions").json()
+    row = actions["rows"][0]
+    client.patch(f"/api/actions/{row['id']}",
+                 json={"status": "Converted", "realised_value": 1000})
+
+    body = client.get("/api/performance").json()
+    assert body["recorded_sales"] >= 1000
+    assert body["recorded_sales_count"] >= 1
+    assert body["estimated_incremental_revenue"] < body["recorded_sales"], \
+        "incremental revenue must be a discounted share of what was actually sold"
+    # The advisor-entered figure is observed, and says why it can outrun the till.
+    assert "observed" in body["recorded_sales_basis"].lower()
+
+
 def test_upload_maps_and_imports_a_real_csv(client):
     csv = (
         "Codice Cliente;Nome Cliente;Ultimo Acquisto;Spesa Totale;N Ordini;Consenso Marketing\n"

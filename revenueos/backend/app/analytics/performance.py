@@ -74,13 +74,25 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
         if contacted_on and 0 <= (tx_date - contacted_on).days <= ATTRIBUTION_WINDOW_DAYS:
             influenced_revenue += amount
 
+    # --- sales the advisor recorded against a converted opportunity ---
+    # These are observed too, just through a different channel: an advisor typing
+    # in what the customer bought. They often precede the POS export, which is
+    # why a boutique can show recorded sales while influenced revenue is still nil.
+    recorded_sales = sum(float(r["realised_value"]) for r in converted
+                         if r.get("realised_value"))
+    recorded_count = sum(1 for r in converted if r.get("realised_value"))
+
     # --- the modelled share we claim as caused ---
     incremental = 0.0
+    estimated_rows = 0
     for row in converted:
         share = INCREMENTALITY.get(row.get("trigger", ""), 0.5)
-        # Prefer real observed spend for this customer; fall back to the estimate
-        # that was on the card when the advisor acted.
-        booked = row.get("realised_value") or row.get("basket_value") or row.get("influenced_value")
+        booked = row.get("realised_value")
+        if not booked:
+            # No recorded sale value: fall back to what was on the card, and count
+            # the row so the basis can say how much of this is estimate on estimate.
+            booked = row.get("basket_value") or row.get("influenced_value")
+            estimated_rows += 1
         if booked:
             incremental += float(booked) * share
 
@@ -104,14 +116,25 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
         "influenced_revenue_basis": (
             f"Spend within {ATTRIBUTION_WINDOW_DAYS} days after a recorded contact. "
             "Observed and time-linked, still not proof of cause."),
+        "recorded_sales": round(recorded_sales, 2),
+        "recorded_sales_count": recorded_count,
+        "recorded_sales_basis": (
+            f"Sale values advisors entered against {recorded_count} converted "
+            f"{'opportunity' if recorded_count == 1 else 'opportunities'}. Observed, and "
+            "often ahead of the till export — which is why this can exceed the "
+            "revenue matched from transactions."),
         "estimated_incremental_revenue": round(incremental, 2),
         "incremental_revenue_basis": (
             "Converted opportunities, discounted by how likely that purchase was to "
             "happen anyway. Modelled, not measured — a holdout group is the only "
-            "way to measure this properly."),
+            "way to measure this properly."
+            + (f" {estimated_rows} of {len(converted)} had no sale value entered, so "
+               "the card's estimate was used for those."
+               if estimated_rows else "")),
         "measurement_caveat": (
             "RevenueOS has no control group yet, so incremental revenue is an "
-            "estimate. Contacted and influenced revenue are counted from real sales."),
+            "estimate. Contacted revenue, revenue after contact and recorded sales "
+            "are all counted from real observations."),
         "by_trigger": _by_trigger(recent),
     }
 

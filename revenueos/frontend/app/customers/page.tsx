@@ -4,43 +4,35 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
-import { StackedBar } from "@/components/charts";
 import {
   Badge,
   Card,
   EmptyState,
   ErrorState,
-  SectionTitle,
   TableSkeleton,
   Td,
   Th,
   Value,
   inputClass,
 } from "@/components/ui";
-import { CustomerRow, Summary, useApi } from "@/lib/api";
-import { compactMoney, days, matchColor, money, num, seriesColor, shortDate } from "@/lib/format";
+import { CustomerRow, useApi } from "@/lib/api";
+import { days, lifecycleColor, matchColor, money, num, pct, shortDate, valueColor } from "@/lib/format";
 
 type Listing = {
   total: number;
   customers: CustomerRow[];
-  facets: { segments: string[]; stores: string[] };
+  facets: { value_tiers: string[]; lifecycles: string[]; stores: string[] };
 };
-
-const SORTS = [
-  { key: "customer_score", label: "Score" },
-  { key: "total_spend", label: "Value" },
-  { key: "overdue_ratio", label: "Overdue" },
-  { key: "recency_days", label: "Recency" },
-  { key: "potential_annual_value", label: "Potential" },
-] as const;
 
 export default function CustomersPage() {
   const [q, setQ] = useState("");
-  const [segment, setSegment] = useState("");
+  // Value and lifecycle filter separately, because they answer different
+  // questions: "who are my best customers" and "who is drifting away".
+  const [valueTier, setValueTier] = useState("");
+  const [lifecycle, setLifecycle] = useState("");
   const [store, setStore] = useState("");
   const [sort, setSort] = useState<string>("customer_score");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
-  const [overdueOnly, setOverdueOnly] = useState(false);
   const [contactableOnly, setContactableOnly] = useState(false);
 
   const query = useMemo(() => {
@@ -50,15 +42,14 @@ export default function CustomersPage() {
       limit: "100",
     });
     if (q) params.set("q", q);
-    if (segment) params.set("segment", segment);
+    if (valueTier) params.set("value_tier", valueTier);
+    if (lifecycle) params.set("lifecycle", lifecycle);
     if (store) params.set("store", store);
-    if (overdueOnly) params.set("overdue_only", "true");
     if (contactableOnly) params.set("contactable_only", "true");
     return `/customers?${params.toString()}`;
-  }, [q, segment, store, sort, direction, overdueOnly, contactableOnly]);
+  }, [q, valueTier, lifecycle, store, sort, direction, contactableOnly]);
 
   const listing = useApi<Listing>(query);
-  const summary = useApi<Summary>("/summary");
 
   const toggleSort = (key: string) => {
     if (sort === key) setDirection((d) => (d === "desc" ? "asc" : "desc"));
@@ -73,22 +64,8 @@ export default function CustomersPage() {
       <PageHeader
         eyebrow="Customers"
         title="Customer base"
-        subtitle="Every customer scored against your own population — a €2,000 client is a VIP in one boutique and average in another."
+        subtitle="Value and buying cycle are shown separately. A customer is a VIP because of what they spend, not because of when they last came in."
       />
-
-      {summary.data?.segments && summary.data.segments.length > 0 && (
-        <Card className="mb-5">
-          <SectionTitle title="Segments" hint="Share of your customer base, by behaviour." />
-          <StackedBar
-            data={summary.data.segments.map((s, i) => ({
-              label: s.segment,
-              value: s.customers,
-              color: seriesColor(i),
-              hint: s.play,
-            }))}
-          />
-        </Card>
-      )}
 
       <Card padded={false}>
         <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] p-3">
@@ -105,9 +82,24 @@ export default function CustomersPage() {
             />
           </div>
 
-          <select value={segment} onChange={(e) => setSegment(e.target.value)} className={`${inputClass} w-auto`}>
-            <option value="">All segments</option>
-            {listing.data?.facets.segments.map((s) => (
+          <select
+            value={valueTier}
+            onChange={(e) => setValueTier(e.target.value)}
+            className={`${inputClass} w-auto`}
+          >
+            <option value="">All value tiers</option>
+            {listing.data?.facets.value_tiers.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          <select
+            value={lifecycle}
+            onChange={(e) => setLifecycle(e.target.value)}
+            className={`${inputClass} w-auto`}
+          >
+            <option value="">All stages</option>
+            {listing.data?.facets.lifecycles.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -121,10 +113,6 @@ export default function CustomersPage() {
             </select>
           ) : null}
 
-          <label className="flex items-center gap-2 rounded-lg border border-[var(--line)] px-2.5 py-2 text-[12.5px] text-[var(--ink-2)]">
-            <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
-            Overdue
-          </label>
           <label className="flex items-center gap-2 rounded-lg border border-[var(--line)] px-2.5 py-2 text-[12.5px] text-[var(--ink-2)]">
             <input
               type="checkbox"
@@ -140,7 +128,7 @@ export default function CustomersPage() {
         </div>
 
         {listing.loading ? (
-          <TableSkeleton rows={8} cols={7} />
+          <TableSkeleton rows={8} cols={8} />
         ) : listing.error ? (
           <ErrorState message={listing.error} onRetry={listing.refresh} />
         ) : !listing.data?.customers.length ? (
@@ -150,15 +138,16 @@ export default function CustomersPage() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[940px]">
+            <table className="w-full min-w-[1020px]">
               <thead>
                 <tr>
                   <Th>Customer</Th>
-                  <Th>Segment</Th>
+                  <Th>Value</Th>
+                  <Th>Cycle stage</Th>
                   <SortableTh label="Value" active={sort === "total_spend"} direction={direction} onClick={() => toggleSort("total_spend")} />
                   <Th align="right">Orders</Th>
                   <Th>Last purchase</Th>
-                  <SortableTh label="Cycle" active={sort === "overdue_ratio"} direction={direction} onClick={() => toggleSort("overdue_ratio")} />
+                  <SortableTh label="Through cycle" active={sort === "cycle_position"} direction={direction} onClick={() => toggleSort("cycle_position")} />
                   <Th>Recommended next</Th>
                   <SortableTh label="Score" active={sort === "customer_score"} direction={direction} onClick={() => toggleSort("customer_score")} />
                 </tr>
@@ -173,12 +162,23 @@ export default function CustomersPage() {
                           {c.crm_record === false
                             ? "From transactions only"
                             : c.store || c.customer_id}
-                          {!c.contactable && " · no consent"}
+                          {!c.contactable && " · cannot contact"}
                         </span>
                       </Link>
                     </Td>
                     <Td>
-                      <Badge color={toneOf(c.segment_tone)}>{c.segment || "—"}</Badge>
+                      {c.value_tier ? (
+                        <Badge color={valueColor(c.value_tier)}>{c.value_tier}</Badge>
+                      ) : (
+                        <Value>{null}</Value>
+                      )}
+                    </Td>
+                    <Td>
+                      {c.lifecycle ? (
+                        <Badge color={lifecycleColor(c.lifecycle)}>{c.lifecycle}</Badge>
+                      ) : (
+                        <Value>{null}</Value>
+                      )}
                     </Td>
                     <Td align="right">
                       <Value>{c.total_spend != null ? money(c.total_spend) : null}</Value>
@@ -191,15 +191,19 @@ export default function CustomersPage() {
                       )}
                     </Td>
                     <Td align="right">
-                      {c.overdue_ratio != null ? (
+                      {c.cycle_position != null ? (
                         <span
-                          style={{ color: c.overdue_ratio > 1.3 ? "var(--serious)" : "var(--ink)" }}
-                          title="Time since last purchase, relative to this customer's own buying cycle"
+                          style={{ color: lifecycleColor(c.lifecycle) }}
+                          title={
+                            c.cycle_days
+                              ? `${c.recency_days} days since last purchase, against a ${Math.round(c.cycle_days)}-day cycle (${c.cycle_confidence} confidence)`
+                              : undefined
+                          }
                         >
-                          {c.overdue_ratio < 0.1 ? "just bought" : `${c.overdue_ratio.toFixed(1)}×`}
+                          {pct(Math.min(c.cycle_position, 3))}
                         </span>
                       ) : (
-                        <Value hint="No repurchase cadence established yet">{null}</Value>
+                        <Value hint="Not enough purchase history to estimate a cycle">{null}</Value>
                       )}
                     </Td>
                     <Td>
@@ -258,15 +262,3 @@ function SortableTh({
   );
 }
 
-function toneOf(tone: string | undefined): string {
-  switch (tone) {
-    case "positive":
-      return "var(--good)";
-    case "warning":
-      return "var(--warning)";
-    case "negative":
-      return "var(--critical)";
-    default:
-      return "var(--ink-3)";
-  }
-}

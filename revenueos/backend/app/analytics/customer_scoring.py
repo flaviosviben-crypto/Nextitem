@@ -230,7 +230,16 @@ def _profile_one(rec: dict[str, Any], txs: list[dict[str, Any]], as_of: date) ->
         "country": rec.get("country"),
         "store": rec.get("store") or _mode([t.get("store") for t in txs]),
         "gender": rec.get("gender"),
+        "phone": rec.get("phone"),
         "marketing_consent": rec.get("marketing_consent"),
+        # Carried through untouched for the compliance layer to resolve. Consent
+        # is not a metric, so nothing here interprets it.
+        "email_consent": rec.get("email_consent"),
+        "sms_consent": rec.get("sms_consent"),
+        "whatsapp_consent": rec.get("whatsapp_consent"),
+        "phone_consent": rec.get("phone_consent"),
+        "do_not_contact": rec.get("do_not_contact"),
+        "last_contacted_date": rec.get("last_contacted_date"),
         "source_segment": rec.get("segment"),
 
         "total_spend": round(total_spend, 2) if total_spend is not None else None,

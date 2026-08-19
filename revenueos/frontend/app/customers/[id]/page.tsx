@@ -1,54 +1,53 @@
 "use client";
 
+/**
+ * Customer Detail — one question, answered above the fold.
+ *
+ * "Why is RevenueOS telling me to contact this customer?" The answer sits at
+ * the top with the evidence beside it, so an advisor can verify it in seconds
+ * rather than trusting a score. Everything below is the history that backs it.
+ */
+
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, ChevronDown, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, ShieldOff } from "lucide-react";
 import { Page } from "@/components/Shell";
 import { BarList, SignalBreakdown } from "@/components/charts";
 import {
   Badge,
   Card,
   ConfidenceTag,
-  EmptyState,
   ErrorState,
-  Meter,
   SectionTitle,
   Skeleton,
   Td,
   Th,
   Value,
 } from "@/components/ui";
-import { Match, useApi } from "@/lib/api";
-import { compactMoney, days, matchColor, money, num, pct, seriesColor, shortDate } from "@/lib/format";
-
-type Detail = {
-  profile: Record<string, any>;
-  recommendations: Match[];
-  timeline: {
-    date: string | null;
-    product: string | null;
-    category: string | null;
-    brand: string | null;
-    amount: number | null;
-    quantity: number | null;
-    store: string | null;
-  }[];
-  opportunities: { id: string; title: string; action: string }[];
-};
-
-type Narrative = { summary: string; actions: string[]; engine: string };
+import { type CustomerDetail, type Match, useApi } from "@/lib/api";
+import {
+  days,
+  lifecycleColor,
+  matchColor,
+  money,
+  num,
+  pct,
+  seriesColor,
+  shortDate,
+  valueColor,
+} from "@/lib/format";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
   const id = decodeURIComponent(params.id);
-  const detail = useApi<Detail>(`/customers/${encodeURIComponent(id)}`);
-  const narrative = useApi<Narrative>(`/customers/${encodeURIComponent(id)}/narrative`);
+  const detail = useApi<CustomerDetail>(`/customers/${encodeURIComponent(id)}`);
 
   if (detail.loading) {
     return (
       <Page>
         <Skeleton className="mb-6 h-8 w-64" />
+        <Skeleton className="mb-5 h-40 w-full rounded-xl" />
         <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
           <Skeleton className="h-[420px]" />
           <Skeleton className="h-[420px]" />
@@ -56,11 +55,16 @@ export default function CustomerDetailPage() {
       </Page>
     );
   }
-  if (detail.error) return <Page><ErrorState message={detail.error} onRetry={detail.refresh} /></Page>;
+  if (detail.error) {
+    return (
+      <Page>
+        <ErrorState message={detail.error} onRetry={detail.refresh} />
+      </Page>
+    );
+  }
   if (!detail.data) return null;
 
-  const p = detail.data.profile;
-  const overdue = p.overdue_ratio as number | null;
+  const { profile: p, why_contact: why, value, lifecycle, eligibility } = detail.data;
 
   return (
     <Page>
@@ -68,380 +72,307 @@ export default function CustomerDetailPage() {
         href="/customers"
         className="mb-4 inline-flex items-center gap-1.5 text-[12.5px] text-[var(--ink-2)] hover:text-[var(--ink)]"
       >
-        <ArrowLeft size={14} /> All customers
+        <ArrowLeft size={13} /> All customers
       </Link>
 
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-[24px] font-semibold tracking-[-0.02em]">{p.name}</h1>
-            <Badge color={toneOf(p.segment_tone)}>{p.segment}</Badge>
-            {p.marketing_consent !== true && (
-              <Badge color="var(--warning)">Consent not on file</Badge>
-            )}
-          </div>
-          <p className="mt-1.5 text-[13px] text-[var(--ink-2)]">
-            {[p.store, p.city, p.customer_id].filter(Boolean).join(" · ")}
-          </p>
-        </div>
-        <div className="flex items-center gap-5">
-          <MiniStat label="Customer score" value={p.customer_score != null ? String(p.customer_score) : "—"} />
-          <MiniStat label="Lifetime value" value={money(p.total_spend)} />
-          <MiniStat label="Annual potential" value={money(p.potential_annual_value)} />
+      <header className="mb-5">
+        <h1 className="text-[24px] font-semibold tracking-[-0.02em]">{p.name}</h1>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {value.tier && <Badge color={valueColor(value.tier)}>{value.tier}</Badge>}
+          {lifecycle.stage && (
+            <Badge color={lifecycleColor(lifecycle.stage)}>{lifecycle.stage}</Badge>
+          )}
+          {p.store && <span className="text-[12px] text-[var(--ink-3)]">{p.store}</span>}
+          <ConfidenceTag level={p.data_confidence} />
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <FactCard label="Orders" value={num(p.order_count)} hint={p.spend_source ? `From ${p.spend_source}` : undefined} />
-        <FactCard label="Average basket" value={money(p.avg_order_value)} />
-        <FactCard
-          label="Last purchase"
-          value={p.last_purchase ? shortDate(p.last_purchase) : "—"}
-          hint={p.recency_days != null ? `${days(p.recency_days)} ago` : "No purchase on record"}
-        />
-        <FactCard
-          label="Buying cycle"
-          value={p.cadence_days ? `${Math.round(p.cadence_days)} days` : "—"}
-          hint={
-            overdue == null
-              ? "Not enough purchases to establish"
-              : overdue > 1.2
-                ? `${overdue.toFixed(1)}× past due`
-                : overdue < 0.15
-                  ? "Just purchased — not due yet"
-                  : `${Math.round(overdue * 100)}% through the cycle`
-          }
-          tone={overdue != null && overdue > 1.3 ? "warning" : undefined}
-        />
+      {/* ---- The answer, first ---- */}
+      <Card className="mb-5">
+        <div className="eyebrow">Why contact them</div>
+        <h2 className="mt-2 text-[17px] font-semibold tracking-[-0.01em]">{why.headline}</h2>
+        {why.why_now && (
+          <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">{why.why_now}</p>
+        )}
+
+        {why.product && (
+          <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--raised)] p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="text-[14px] font-medium">{why.product.name}</span>
+              <div className="flex items-center gap-2.5">
+                <span className="num text-[14px]">{money(why.product.price)}</span>
+                <Badge color={matchColor(why.product.match_pct)}>
+                  {why.product.match_pct}% match
+                </Badge>
+              </div>
+            </div>
+            <ul className="mt-2.5 space-y-1">
+              {why.product.why.map((r) => (
+                <li key={r} className="text-[12px] leading-snug text-[var(--ink-2)]">
+                  · {r}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2.5 text-[11px] text-[var(--ink-3)]">{why.product.availability}</p>
+          </div>
+        )}
+
+        <p className="mt-4 border-t border-[var(--line)] pt-4 text-[13px] font-medium">
+          {why.action}
+        </p>
+      </Card>
+
+      {/* ---- The evidence behind each badge ---- */}
+      <div className="mb-5 grid gap-4 lg:grid-cols-3">
+        <Card>
+          <div className="eyebrow">Value</div>
+          <div className="mt-1.5 text-[15px] font-semibold" style={{ color: valueColor(value.tier) }}>
+            {value.tier || "—"}
+          </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-2)]">{value.basis}</p>
+          {value.signals.length > 0 && (
+            <ul className="mt-2.5 space-y-1">
+              {value.signals.map((sig) => (
+                <li key={sig} className="text-[12px] leading-snug text-[var(--ink-3)]">
+                  · {sig}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <div className="eyebrow">Buying cycle</div>
+          <div
+            className="mt-1.5 text-[15px] font-semibold"
+            style={{ color: lifecycleColor(lifecycle.stage) }}
+          >
+            {lifecycle.stage || "—"}
+          </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-2)]">{lifecycle.basis}</p>
+          {/* The cycle's provenance is stated, so "every 42 days" is never mistaken
+              for this customer's own habit when it came from a cohort. */}
+          <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-3)]">
+            {lifecycle.cycle_basis}
+          </p>
+        </Card>
+
+        <Card>
+          <div className="eyebrow">How you may reach them</div>
+          {eligibility?.status === "Actionable" ? (
+            <>
+              <div className="mt-1.5 text-[15px] font-semibold" style={{ color: "var(--good)" }}>
+                Actionable
+              </div>
+              <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-2)]">
+                {eligibility.channels.map((c) => c.label).join(", ")}.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold text-[var(--ink-3)]">
+                <ShieldOff size={15} /> Suppressed
+              </div>
+              <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-2)]">
+                {eligibility?.reason || "No permitted contact channel on file."}
+              </p>
+            </>
+          )}
+        </Card>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
         <div className="space-y-5">
           <Card>
             <SectionTitle
-              title="What we know"
-              hint={
-                narrative.data?.engine === "claude"
-                  ? "Written by the analyst from computed metrics."
-                  : "Computed directly from this customer's history."
-              }
-              action={
-                narrative.data?.engine === "claude" ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-[var(--ink-3)]">
-                    <Sparkles size={11} /> AI summary
-                  </span>
-                ) : null
-              }
+              title="Purchase history"
+              hint={`${num(p.order_count)} orders · ${money(p.total_spend)} lifetime · last purchase ${
+                p.recency_days != null ? days(p.recency_days) + " ago" : "unknown"
+              }`}
             />
-            {narrative.loading ? (
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-[85%]" />
-              </div>
-            ) : (
-              <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]">
-                {narrative.data?.summary}
+            {detail.data.timeline.length === 0 ? (
+              <p className="text-[13px] text-[var(--ink-3)]">
+                No transactions imported for this customer.
               </p>
-            )}
-
-            {narrative.data?.actions?.length ? (
-              <div className="mt-5 border-t border-[var(--line)] pt-4">
-                <div className="eyebrow mb-2.5">Next best actions</div>
-                <ol className="space-y-2">
-                  {narrative.data.actions.map((action, i) => (
-                    <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed">
-                      <span className="num mt-0.5 text-[11px] font-semibold text-[var(--ink-3)]">
-                        {i + 1}
-                      </span>
-                      <span>{action}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ) : null}
-          </Card>
-
-          <Card>
-            <SectionTitle
-              title="Recommended products"
-              hint="Ranked by fit, with the reasoning behind every score."
-            />
-            {detail.data.recommendations.length ? (
-              <div className="space-y-2.5">
-                {detail.data.recommendations.map((m) => (
-                  <RecommendationRow key={m.sku} match={m} />
-                ))}
-              </div>
             ) : (
-              <EmptyState
-                title="No confident recommendation"
-                body="No catalogue product clears the evidence threshold for this customer. Importing transaction history or product categories would change that."
-              />
-            )}
-          </Card>
-
-          <Card padded={false}>
-            <div className="p-5 pb-3">
-              <SectionTitle title="Purchase history" hint={`${detail.data.timeline.length} recorded lines.`} />
-            </div>
-            {detail.data.timeline.length ? (
-              <div className="max-h-[380px] overflow-auto">
-                <table className="w-full">
+              <div className="max-h-[420px] overflow-auto">
+                <table className="w-full min-w-[520px]">
                   <thead>
                     <tr>
                       <Th>Date</Th>
-                      <Th>Product</Th>
+                      <Th>Item</Th>
                       <Th>Category</Th>
                       <Th align="right">Amount</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {detail.data.timeline.map((t, i) => (
-                      <tr key={i}>
-                        <Td><Value>{t.date ? shortDate(t.date) : null}</Value></Td>
+                      <tr key={`${t.transaction_id}-${i}`}>
                         <Td>
-                          <span className="text-[13px]">{t.product || "—"}</span>
+                          <Value>{shortDate(t.date)}</Value>
+                        </Td>
+                        <Td>
+                          <Value>{t.product}</Value>
                           {t.brand && (
                             <span className="ml-2 text-[11px] text-[var(--ink-3)]">{t.brand}</span>
                           )}
                         </Td>
-                        <Td><span className="text-[var(--ink-2)]">{t.category || "—"}</span></Td>
-                        <Td align="right">{money(t.amount)}</Td>
+                        <Td>
+                          <Value>{t.category}</Value>
+                        </Td>
+                        <Td align="right">
+                          <Value>{money(t.amount)}</Value>
+                        </Td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <EmptyState
-                title="No transaction history"
-                body="This customer's metrics come from CRM summary fields. Import transactions for cadence, affinity and product-level matching."
-              />
             )}
           </Card>
+
+          {detail.data.recommendations.length > 0 && (
+            <Card>
+              <SectionTitle
+                title="Other pieces that fit"
+                hint="Ranked by how well they match this customer's own buying signals."
+              />
+              <div className="space-y-4">
+                {detail.data.recommendations.slice(0, 4).map((m) => (
+                  <Recommendation key={m.sku} match={m} />
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-5">
           <Card>
-            <SectionTitle title="Buying profile" />
-            <AffinityBlock title="Categories" data={p.category_affinity} />
-            <AffinityBlock title="Brands" data={p.brand_affinity} />
-            <AffinityBlock title="Colours" data={p.color_affinity} />
-            {p.size_affinity_by_family && Object.keys(p.size_affinity_by_family).length > 0 && (
-              <div className="mt-4">
-                <div className="eyebrow mb-2">Sizes</div>
-                <div className="space-y-1.5">
-                  {Object.entries(p.size_affinity_by_family as Record<string, Record<string, number>>).map(
-                    ([family, sizes]) => (
-                      <div key={family} className="flex items-baseline justify-between gap-3 text-[12.5px]">
-                        <span className="text-[var(--ink-2)]">{family}</span>
-                        <span className="num">{Object.keys(sizes).slice(0, 2).join(", ")}</span>
-                      </div>
-                    ),
-                  )}
-                </div>
-              </div>
+            <SectionTitle title="What they buy" />
+            <Affinity title="Categories" shares={p.category_affinity} />
+            <Affinity title="Brands" shares={p.brand_affinity} />
+            <Affinity title="Colours" shares={p.color_affinity} />
+            {p.price_low && p.price_high && (
+              <p className="mt-4 text-[12px] text-[var(--ink-2)]">
+                Typically spends {money(p.price_low)}–{money(p.price_high)} per piece.
+              </p>
             )}
-
-            <div className="mt-4 space-y-2 border-t border-[var(--line)] pt-4 text-[12.5px]">
-              <Row label="Price band">
-                {p.price_low && p.price_high ? `${money(p.price_low)} – ${money(p.price_high)}` : "—"}
-              </Row>
-              <Row label="Buys on discount">
-                {p.discount_share != null ? pct(p.discount_share) : "—"}
-              </Row>
-              <Row label="Spend trend">
-                {p.spend_growth != null ? (
-                  <span style={{ color: p.spend_growth >= 0 ? "var(--good)" : "var(--critical)" }}>
-                    {p.spend_growth >= 0 ? "+" : ""}
-                    {pct(p.spend_growth)}
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </Row>
-              <Row label="Data confidence">
-                <ConfidenceTag level={p.data_confidence} />
-              </Row>
-            </div>
           </Card>
 
-          {p.segment_play && (
-            <Card>
-              <div className="eyebrow mb-2">Segment play</div>
-              <p className="text-[13px] leading-relaxed text-[var(--ink-2)]">{p.segment_play}</p>
-            </Card>
-          )}
-
-          {detail.data.opportunities.length > 0 && (
-            <Card>
-              <SectionTitle title="In these opportunities" />
-              <ul className="space-y-2">
-                {detail.data.opportunities.map((o) => (
-                  <li key={o.id}>
-                    <Link
-                      href={`/opportunities#${o.id}`}
-                      className="row-link block rounded-lg border border-[var(--line)] p-3"
-                    >
-                      <span className="block text-[13px] font-medium">{o.title}</span>
-                      <span className="mt-1 block text-[12px] text-[var(--ink-2)]">{o.action}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
+          <Card>
+            <SectionTitle title="At a glance" />
+            <dl className="space-y-2.5 text-[13px]">
+              <Row label="Lifetime spend" value={money(p.total_spend)} />
+              <Row label="Orders" value={num(p.order_count)} />
+              <Row label="Average basket" value={money(p.avg_order_value)} />
+              <Row
+                label="Buying cycle"
+                value={lifecycle.cycle_days ? `${Math.round(lifecycle.cycle_days)} days` : null}
+                hint={lifecycle.cycle_confidence || undefined}
+              />
+              <Row
+                label="Through their cycle"
+                value={lifecycle.cycle_position ? pct(lifecycle.cycle_position) : null}
+              />
+              <Row label="Last purchase" value={shortDate(p.last_purchase)} />
+              <Row
+                label="Discounted purchases"
+                value={p.discount_share != null ? pct(p.discount_share) : null}
+              />
+            </dl>
+          </Card>
         </div>
       </div>
     </Page>
   );
 }
 
-function RecommendationRow({ match }: { match: Match }) {
+/**
+ * A recommendation shows its reasons; the eight-signal breakdown that produced
+ * them is one click away. The engine is not less sophisticated for being quiet.
+ */
+function Recommendation({ match }: { match: Match }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-[var(--line)]">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-3.5 p-3.5 text-left"
-      >
-        <span className="w-11 shrink-0 text-center">
-          <span className="num block text-[17px] font-semibold" style={{ color: matchColor(match.match_pct) }}>
-            {match.match_pct}%
-          </span>
-          <span className="block text-[9.5px] uppercase tracking-wide text-[var(--ink-3)]">match</span>
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13.5px] font-medium">{match.product_name}</span>
-          <span className="mt-0.5 block truncate text-[12px] text-[var(--ink-3)]">
-            {[match.brand, match.category, money(match.price)].filter(Boolean).join(" · ")}
-            {match.stock != null && ` · ${match.stock} in stock`}
-          </span>
-        </span>
-        <span className="hidden shrink-0 text-right sm:block">
-          <ConfidenceTag level={match.data_confidence} />
-          {match.expected_value != null && (
-            <span className="num mt-1 block text-[11px] text-[var(--ink-3)]">
-              {money(match.expected_value)} expected
-            </span>
+    <div className="border-b border-[var(--line)] pb-4 last:border-0 last:pb-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <span className="text-[13.5px] font-medium">{match.product_name}</span>
+          {match.brand && (
+            <span className="ml-2 text-[12px] text-[var(--ink-3)]">{match.brand}</span>
           )}
-        </span>
-        <ChevronDown
-          size={15}
-          className={`shrink-0 text-[var(--ink-3)] transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {!open && match.why.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-3.5 pb-3.5">
-          {match.why.slice(0, 3).map((why, i) => (
-            <span key={i} className="rounded-md bg-[var(--raised)] px-2 py-1 text-[11px] text-[var(--ink-2)]">
-              {why}
-            </span>
-          ))}
         </div>
-      )}
-
-      {open && (
-        <div className="fade-in border-t border-[var(--line)] p-4">
-          <SignalBreakdown signals={match.signals} />
-          {match.caveats.length > 0 && (
-            <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
-              <div className="eyebrow mb-1.5">Worth knowing</div>
-              <ul className="space-y-1">
-                {match.caveats.map((c, i) => (
-                  <li key={i} className="text-[12px] text-[var(--ink-2)]">{c}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <Link
-            href={`/inventory/${encodeURIComponent(match.sku)}`}
-            className="mt-3 inline-block text-[12px] text-[var(--accent)] hover:underline"
-          >
-            View product →
-          </Link>
+        <div className="flex items-center gap-2.5">
+          <span className="num text-[13px]">{money(match.price)}</span>
+          <Badge color={matchColor(match.match_pct)}>{match.match_pct}%</Badge>
         </div>
-      )}
-    </div>
-  );
-}
-
-function AffinityBlock({ title, data }: { title: string; data: Record<string, number> | undefined }) {
-  if (!data || Object.keys(data).length === 0) {
-    return (
-      <div className="mt-4">
-        <div className="eyebrow mb-2">{title}</div>
-        <p className="text-[12px] text-[var(--ink-3)]">Not enough information</p>
       </div>
-    );
-  }
-  return (
-    <div className="mt-4">
-      <div className="eyebrow mb-2">{title}</div>
-      <BarList
-        rows={Object.entries(data)
-          .slice(0, 4)
-          .map(([label, value], i) => ({ label, value, color: seriesColor(i) }))}
-        format={(v) => pct(v)}
-        max={1}
-      />
+
+      <ul className="mt-2 space-y-1">
+        {match.why.slice(0, 3).map((r) => (
+          <li key={r} className="text-[12px] leading-snug text-[var(--ink-2)]">
+            · {r}
+          </li>
+        ))}
+        {match.caveats.map((c) => (
+          <li key={c} className="text-[12px] leading-snug text-[var(--warning)]">
+            · {c}
+          </li>
+        ))}
+      </ul>
+
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="mt-2 flex items-center gap-1 text-[11px] text-[var(--ink-3)] transition-colors hover:text-[var(--ink-2)]"
+      >
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        {open ? "Hide the full breakdown" : "How this match was scored"}
+      </button>
+      {open && (
+        <div className="mt-3">
+          <SignalBreakdown signals={match.signals} />
+        </div>
+      )}
     </div>
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="eyebrow">{label}</div>
-      <div className="num mt-1 text-[17px] font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function FactCard({
+function Row({
   label,
   value,
   hint,
-  tone,
 }: {
   label: string;
-  value: string;
+  value: string | number | null | undefined;
   hint?: string;
-  tone?: "warning";
 }) {
   return (
-    <div className="card p-4">
-      <div className="eyebrow">{label}</div>
-      <div
-        className="num mt-1.5 text-[18px] font-semibold"
-        style={{ color: tone === "warning" ? "var(--serious)" : undefined }}
-      >
-        {value}
-      </div>
-      {hint && <div className="mt-1 text-[11.5px] text-[var(--ink-3)]">{hint}</div>}
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="text-[var(--ink-2)]">{label}</dt>
+      <dd className="num text-right">
+        <Value>{value}</Value>
+        {hint && value && (
+          <span className="ml-2 text-[11px] font-normal text-[var(--ink-3)]">{hint}</span>
+        )}
+      </dd>
     </div>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Affinity({ title, shares }: { title: string; shares?: Record<string, number> }) {
+  const rows = Object.entries(shares || {}).slice(0, 4);
+  if (rows.length === 0) return null;
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-[var(--ink-3)]">{label}</span>
-      <span className="num text-right">{children}</span>
+    <div className="mb-4 last:mb-0">
+      <div className="eyebrow mb-2">{title}</div>
+      <BarList
+        rows={rows.map(([label, share], i) => ({
+          label,
+          value: share,
+          color: seriesColor(i),
+        }))}
+        format={(v) => pct(v)}
+      />
     </div>
   );
-}
-
-function toneOf(tone: string | undefined): string {
-  switch (tone) {
-    case "positive":
-      return "var(--good)";
-    case "warning":
-      return "var(--warning)";
-    case "negative":
-      return "var(--critical)";
-    default:
-      return "var(--ink-3)";
-  }
 }

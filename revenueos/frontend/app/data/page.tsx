@@ -41,17 +41,17 @@ const FILES: { kind: Kind; title: string; blurb: string }[] = [
   {
     kind: "customers",
     title: "Customers",
-    blurb: "Identity, consent and CRM attributes. Optional if your transactions carry a customer ID.",
+    blurb: "Your standard CRM export: customer ID, name, contact details and consent. Optional if your sales export already carries a customer ID.",
   },
   {
     kind: "transactions",
     title: "Transactions",
-    blurb: "Order history — the source of spend, cadence, affinity and trend.",
+    blurb: "Your standard sales export, one row per line item or per order. This is where spend, buying cycle and taste come from.",
   },
   {
     kind: "inventory",
     title: "Products & Inventory",
-    blurb: "Catalogue, price and stock. Needed to recommend a specific piece.",
+    blurb: "Your standard catalogue export: SKU, category, brand, price and stock on hand. Needed to recommend a specific piece.",
   },
 ];
 
@@ -148,7 +148,7 @@ export default function DataPage() {
       <PageHeader
         eyebrow="Data"
         title="Your data"
-        subtitle="Three exports are enough: customers, transactions and products. Columns are detected automatically — you only step in when confidence is low."
+        subtitle="Three standard exports are all RevenueOS needs. Send them to us and we'll set the boutique up for you — or drop them in here and we'll map the columns, asking you only where we are unsure."
         actions={
           <>
             <Button onClick={loadDemo} disabled={busy}>

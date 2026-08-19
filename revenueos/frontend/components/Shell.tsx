@@ -5,15 +5,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
-  Boxes,
+  BarChart3,
+  CheckSquare,
   Database,
-  FlaskConical,
   LayoutDashboard,
-  LineChart,
-  Megaphone,
   Moon,
   Search,
-  Sparkles,
   Sun,
   Target,
   Users,
@@ -21,15 +18,15 @@ import {
 import { api } from "@/lib/api";
 import { Badge } from "./ui";
 
+// Six destinations, in the order the work actually happens: see the day, work
+// the list, track what you committed to, look someone up, check it paid off,
+// keep the data flowing. Anything that does not serve that loop is not here.
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/analyst", label: "AI Analyst", icon: Sparkles },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/opportunities", label: "Opportunities", icon: Target },
-  { href: "/campaigns", label: "Campaigns", icon: Megaphone },
-  { href: "/scenarios", label: "Scenario Lab", icon: FlaskConical },
-  { href: "/insights", label: "Insights", icon: LineChart },
+  { href: "/actions", label: "Action Center", icon: CheckSquare },
+  { href: "/customers", label: "Customers", icon: Users },
+  { href: "/performance", label: "Performance", icon: BarChart3 },
   { href: "/data", label: "Data", icon: Database },
 ];
 
@@ -157,7 +154,7 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-type Hit = { kind: "customer" | "product" | "page"; id: string; title: string; subtitle: string };
+type Hit = { kind: "customer" | "page"; id: string; title: string; subtitle: string };
 
 function CommandPalette({ onClose }: { onClose: () => void }) {
   const router = useRouter();
@@ -181,12 +178,9 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     }
     setLoading(true);
     try {
-      const [customers, products] = await Promise.all([
+      const [customers] = await Promise.all([
         api.get<{ customers: { customer_id: string; name: string; segment: string | null }[] }>(
-          `/customers?q=${encodeURIComponent(q)}&limit=6`,
-        ),
-        api.get<{ products: { sku: string; product_name: string; category: string | null }[] }>(
-          `/products?q=${encodeURIComponent(q)}&limit=6`,
+          `/customers?q=${encodeURIComponent(q)}&limit=8`,
         ),
       ]);
       setHits([
@@ -195,12 +189,6 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
           id: c.customer_id,
           title: c.name,
           subtitle: c.segment || "Customer",
-        })),
-        ...products.products.map((p) => ({
-          kind: "product" as const,
-          id: p.sku,
-          title: p.product_name,
-          subtitle: p.category || "Product",
         })),
         ...pages,
       ]);
@@ -219,7 +207,6 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const go = (hit: Hit) => {
     onClose();
     if (hit.kind === "customer") router.push(`/customers/${encodeURIComponent(hit.id)}`);
-    else if (hit.kind === "product") router.push(`/inventory/${encodeURIComponent(hit.id)}`);
     else router.push(hit.id);
   };
 
@@ -252,7 +239,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                 go(hits[cursor]);
               }
             }}
-            placeholder="Search customers, products, pages…"
+            placeholder="Search customers and pages…"
             className="flex-1 bg-transparent text-[14px] outline-none placeholder:text-[var(--ink-3)]"
           />
           {loading && <span className="text-[11px] text-[var(--ink-3)]">…</span>}

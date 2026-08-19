@@ -84,51 +84,19 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
 
 // ------------------------------------------------------------------ types ---
 
-export type Summary = {
-  loaded: boolean;
-  source?: string;
-  revenue_opportunity?: number;
-  opportunities?: number;
-  customers_to_contact?: number;
-  high_confidence_matches?: number;
-  data_health?: number;
-  counts?: { customers: number; transactions: number; products: number };
-  customers?: Record<string, number | null>;
-  inventory?: Record<string, any>;
-  segments?: SegmentRow[];
-};
+export type ValueTier = "VIP" | "Promising" | "Standard";
+export type Lifecycle = "Active" | "Due" | "At Risk" | "Lost";
 
-export type SegmentRow = {
-  segment: string;
-  customers: number;
-  share: number;
-  total_value: number | null;
-  avg_value: number | null;
-  annual_potential: number | null;
-  tone: string;
-  play: string;
-};
+export type Channel = { key: string; label: string; verb: string };
 
-export type CustomerRow = {
-  customer_id: string;
-  name: string;
-  segment: string | null;
-  segment_tone?: string;
-  customer_score: number | null;
-  total_spend: number | null;
-  order_count: number | null;
-  avg_order_value: number | null;
-  last_purchase: string | null;
-  recency_days: number | null;
-  cadence_days: number | null;
-  overdue_ratio: number | null;
-  store: string | null;
-  top_category: string | null;
-  contactable: boolean;
-  data_confidence: string;
-  crm_record?: boolean;
-  potential_annual_value: number | null;
-  recommended_product: { sku: string; name: string; match_pct: number; price: number | null } | null;
+export type Eligibility = {
+  status: "Actionable" | "Suppressed";
+  reason: string | null;
+  reason_code: string | null;
+  channels: Channel[];
+  preferred_channel: Channel | null;
+  blocked: string[];
+  days_since_contact: number | null;
 };
 
 export type MatchSignal = {
@@ -141,6 +109,193 @@ export type MatchSignal = {
   applicable: boolean;
 };
 
+export type ProductCard = {
+  sku: string;
+  name: string;
+  category: string | null;
+  brand: string | null;
+  price: number | null;
+  match_pct: number;
+  why: string[];
+  caveats: string[];
+  missing_signals: string[];
+  match_confidence: string;
+  availability: string;
+  stock: number | null;
+  risk_class: string | null;
+};
+
+export type Opportunity = {
+  id: string;
+  customer_id: string;
+  customer_name: string;
+  value_tier: ValueTier | null;
+  lifecycle: Lifecycle | null;
+  segment: string | null;
+  trigger: string;
+  headline: string;
+  why_now: string;
+  evidence: string | null;
+  product: ProductCard | null;
+  alternatives: ProductCard[];
+  action: string;
+  eligibility: Eligibility;
+  contactable: boolean;
+  basket_value: number | null;
+  influenced_value: number | null;
+  incremental_value: number | null;
+  value_basis: string;
+  probability: number;
+  probability_basis: string;
+  priority: number;
+  data_confidence: string | null;
+  cycle_confidence: string | null;
+};
+
+export type OpportunityFeed = {
+  opportunities: Opportunity[];
+  shown: number;
+  total_detected: number;
+  suppressed: Opportunity[];
+  suppressed_count: number;
+  influenced_value: number;
+  incremental_value: number;
+  triggers: string[];
+};
+
+export type ActionRow = {
+  id: string;
+  customer_id: string;
+  customer_name: string;
+  value_tier: ValueTier | null;
+  lifecycle: Lifecycle | null;
+  trigger: string;
+  reason: string;
+  product: string | null;
+  product_sku: string | null;
+  match_pct: number | null;
+  channel: string | null;
+  contactable: boolean;
+  influenced_value: number | null;
+  incremental_value: number | null;
+  realised_value?: number | null;
+  priority: number;
+  status: string;
+  note: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type ActionCenter = {
+  rows: ActionRow[];
+  counts: Record<string, number>;
+  total: number;
+  statuses: string[];
+  open: number;
+  closed: number;
+  converted_value: number;
+  converted_value_basis: string;
+};
+
+export type Overview = {
+  loaded: boolean;
+  today?: {
+    opportunities: number;
+    note: string;
+    influenced_value: number;
+    value_basis: string;
+    top: {
+      id: string;
+      customer_id: string;
+      customer_name: string;
+      value_tier: ValueTier | null;
+      lifecycle: Lifecycle | null;
+      headline: string;
+      why_now: string;
+      product: string | null;
+      match_pct: number | null;
+      channel: string | null;
+    }[];
+  };
+  this_month?: {
+    customers_contacted: number | null;
+    conversions: number | null;
+    conversion_rate: number | null;
+    influenced_revenue: number | null;
+    estimated_incremental_revenue: number | null;
+  };
+  base?: {
+    customers: number | null;
+    value: { tier: string; customers: number; total_spend: number; meaning: string }[];
+    lifecycle: { stage: string; customers: number; meaning: string }[];
+  };
+  data_health?: number;
+  compliance?: {
+    actionable: number;
+    suppressed: number;
+    suppressed_by_reason: Record<string, number>;
+    frequency_cap_days: number;
+  };
+  counts?: { customers: number; transactions: number; products: number };
+};
+
+export type Performance = {
+  loaded: boolean;
+  window_days: number;
+  opportunities_generated: number;
+  customers_contacted: number;
+  conversions: number;
+  ignored: number;
+  open: number;
+  untouched: number;
+  conversion_rate: number | null;
+  contacted_revenue: number;
+  contacted_revenue_basis: string;
+  influenced_revenue: number;
+  influenced_revenue_basis: string;
+  recorded_sales: number;
+  recorded_sales_count: number;
+  recorded_sales_basis: string;
+  estimated_incremental_revenue: number;
+  incremental_revenue_basis: string;
+  measurement_caveat: string;
+  attribution_note: string;
+  by_trigger: {
+    trigger: string;
+    generated: number;
+    contacted: number;
+    converted: number;
+    conversion_rate: number | null;
+  }[];
+};
+
+export type CustomerRow = {
+  customer_id: string;
+  name: string;
+  value_tier: ValueTier | null;
+  lifecycle: Lifecycle | null;
+  segment: string | null;
+  value_tone?: string;
+  lifecycle_tone?: string;
+  customer_score: number | null;
+  total_spend: number | null;
+  order_count: number | null;
+  avg_order_value: number | null;
+  last_purchase: string | null;
+  recency_days: number | null;
+  cycle_days: number | null;
+  cycle_position: number | null;
+  cycle_confidence: string | null;
+  store: string | null;
+  top_category: string | null;
+  contactable: boolean;
+  suppression_reason: string | null;
+  data_confidence: string;
+  crm_record?: boolean;
+  potential_annual_value: number | null;
+  recommended_product: { sku: string; name: string; match_pct: number; price: number | null } | null;
+};
+
 export type Match = {
   sku: string;
   product_name: string;
@@ -149,8 +304,6 @@ export type Match = {
   price: number | null;
   stock: number | null;
   risk_class: string | null;
-  customer_id?: string;
-  customer_name?: string;
   match_pct: number;
   score: number;
   data_confidence: string;
@@ -162,84 +315,64 @@ export type Match = {
   expected_value?: number | null;
 };
 
-export type Product = {
-  sku: string;
-  product_name: string;
-  category: string | null;
-  brand: string | null;
-  color: string | null;
-  size: string | null;
-  season: string | null;
-  price: number | null;
-  cost: number | null;
-  margin_rate: number | null;
-  stock: number | null;
-  stock_value: number | null;
-  days_in_stock: number | null;
-  units_sold: number;
-  revenue: number;
-  buyers: number;
-  sell_through: number | null;
-  velocity_per_month: number | null;
-  weeks_of_cover: number | null;
-  risk_score: number | null;
-  risk_class: string;
-  risk_reason: string;
-  risk_drivers: { driver: string; points: number; detail: string }[];
-  recommended_action: string;
-  last_sold: string | null;
-};
-
-export type Opportunity = {
-  id: string;
-  type: string;
-  title: string;
-  explanation: string;
-  impact: number | null;
-  expected_value: number | null;
-  impact_basis: string;
-  probability: number;
-  urgency: number;
-  confidence: number;
-  score: number;
-  action: string;
-  entities: {
-    type: string;
-    id: string;
-    name: string;
-    detail?: string;
-    value?: number | null;
-    match_pct?: number | null;
-    suggested_product?: string | null;
-    contactable?: boolean;
-    matched_customers?: number;
-    top_match?: string | null;
-  }[];
-  customer_ids?: string[];
-  product_skus?: string[];
-};
-
-export type Briefing = {
-  loaded: boolean;
-  headline?: {
-    revenue_opportunity: number | null;
-    customers_to_contact: number | null;
-    products_at_risk: number | null;
-    at_risk_value: number | null;
-    high_confidence_matches: number | null;
-    data_health: number | null;
-  };
-  priorities?: (Opportunity & { detail: string; customer_count: number })[];
-  contact_today?: {
-    customer_id: string;
-    name: string;
-    segment: string | null;
-    reason: string;
-    value: number | null;
+export type CustomerDetail = {
+  profile: Record<string, any>;
+  why_contact: {
+    headline: string;
+    why_now: string | null;
+    evidence: string | null;
+    action: string;
+    product: ProductCard | null;
     contactable: boolean;
-    product: { sku: string; name: string; match_pct: number } | null;
+  };
+  value: {
+    tier: ValueTier | null;
+    basis: string | null;
+    signals: string[];
+    percentile: number | null;
+  };
+  lifecycle: {
+    stage: Lifecycle | null;
+    basis: string | null;
+    confidence: string | null;
+    cycle_days: number | null;
+    cycle_basis: string | null;
+    cycle_confidence: string | null;
+    cycle_position: number | null;
+  };
+  eligibility: Eligibility | null;
+  recommendations: Match[];
+  timeline: {
+    date: string | null;
+    transaction_id: string | null;
+    product: string | null;
+    sku: string | null;
+    category: string | null;
+    brand: string | null;
+    color: string | null;
+    size: string | null;
+    quantity: number | null;
+    amount: number | null;
+    discount: number | null;
+    store: string | null;
   }[];
+};
+
+export type Summary = {
+  loaded: boolean;
+  source?: string;
+  revenue_opportunity?: number;
+  opportunities?: number;
+  actionable_opportunities?: number;
+  customers_to_contact?: number;
+  data_health?: number;
   counts?: { customers: number; transactions: number; products: number };
+  customers?: Record<string, number | null>;
+  segments?: {
+    value: { tier: string; customers: number; total_spend: number; meaning: string }[];
+    lifecycle: { stage: string; customers: number; meaning: string }[];
+    matrix: { value_tier: string; lifecycle: string; customers: number }[];
+  };
 };
 
 export type Quality = {

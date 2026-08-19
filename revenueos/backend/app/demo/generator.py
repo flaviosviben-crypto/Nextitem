@@ -223,7 +223,17 @@ def _make_customers_and_sales(rng, products, n_customers, target_transactions):
         span = max(1, (active_until - first_purchase).days)
 
         order_days = sorted(rng.sample(range(span + 1), min(n_orders, span + 1))) if span > 0 else [0]
+        # Consent is messy in real boutiques: some customers agree to everything,
+        # some only to email, some withdrew entirely, and some were never asked.
         consent = rng.random() < (0.9 if price_mult > 1.3 else 0.72)
+        opted_out = rng.random() < 0.04
+        email_ok = consent and rng.random() < 0.92
+        whatsapp_ok = consent and rng.random() < 0.55
+        phone_ok = consent and rng.random() < 0.35
+        sms_ok = consent and rng.random() < 0.30
+        # Recently contacted customers exist, and the frequency cap must hold them.
+        contacted_on = (ANCHOR - timedelta(days=rng.randint(1, 60))
+                        if consent and rng.random() < 0.22 else None)
 
         for order_idx, offset in enumerate(order_days):
             order_date = first_purchase + timedelta(days=offset)
@@ -309,6 +319,12 @@ def _make_customers_and_sales(rng, products, n_customers, target_transactions):
             "size": size_pref.get(home_cat),
             "color": fav_colors[0],
             "marketing_consent": consent,
+            "email_consent": email_ok,
+            "whatsapp_consent": whatsapp_ok,
+            "phone_consent": phone_ok,
+            "sms_consent": sms_ok,
+            "do_not_contact": opted_out,
+            "last_contacted_date": contacted_on,
             "channel": rng.choice(["Boutique", "Boutique", "Online", "Referral"]),
             "notes": None,
             "_persona": pname,

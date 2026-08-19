@@ -100,6 +100,49 @@ export function riskColor(riskClass: string | null | undefined): string {
   }
 }
 
+/** Value tier and lifecycle are separate dimensions, so they get separate colour
+ * scales. Value reads as standing (how much they are worth to the boutique);
+ * lifecycle reads as timing (how urgent the conversation is). */
+export function valueColor(tier: string | null | undefined): string {
+  switch (tier) {
+    case "VIP":
+      return "var(--s7)";
+    case "Promising":
+      return "var(--s1)";
+    default:
+      return "var(--ink-3)";
+  }
+}
+
+export function lifecycleColor(stage: string | null | undefined): string {
+  switch (stage) {
+    case "Active":
+      return "var(--good)";
+    case "Due":
+      return "var(--s1)";
+    case "At Risk":
+      return "var(--warning)";
+    case "Lost":
+      return "var(--critical)";
+    default:
+      return "var(--ink-3)";
+  }
+}
+
+/** Human wording for an opportunity trigger, for filters and summaries. */
+export function triggerLabel(trigger: string): string {
+  return (
+    {
+      due: "Due to buy",
+      at_risk: "Drifting",
+      win_back: "Win-back",
+      new_arrival: "New arrival",
+      cross_sell: "Widen categories",
+      restock_affinity: "Move slow stock",
+    }[trigger] || trigger
+  );
+}
+
 export function matchColor(pctValue: number | null | undefined): string {
   if (pctValue === null || pctValue === undefined) return "var(--ink-3)";
   if (pctValue >= 80) return "var(--good)";
