@@ -1,0 +1,129 @@
+"""Customer list, Customer 360 and AI narrative."""
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query
+
+from ..ai import analyst
+from ..analytics import matching
+from ..workspace import workspace
+
+router = APIRouter(tags=["customers"])
+
+SORTABLE = {"customer_score", "total_spend", "avg_order_value", "recency_days",
+            "overdue_ratio", "potential_annual_value", "order_count", "name"}
+
+
+@router.get("/customers")
+def list_customers(
+    q: str = "",
+    segment: str = "",
+    store: str = "",
+    sort: str = "customer_score",
+    direction: str = "desc",
+    overdue_only: bool = False,
+    contactable_only: bool = False,
+    limit: int = Query(50, le=500),
+    offset: int = 0,
+) -> dict[str, Any]:
+    rows = workspace.profiles
+    if q:
+        needle = q.lower()
+        rows = [p for p in rows if needle in p["name"].lower()
+                or needle in p["customer_id"].lower()]
+    if segment:
+        rows = [p for p in rows if (p.get("segment") or "") == segment]
+    if store:
+        rows = [p for p in rows if (p.get("store") or "") == store]
+    if overdue_only:
+        rows = [p for p in rows if (p.get("overdue_ratio") or 0) > 1.2]
+    if contactable_only:
+        rows = [p for p in rows if p.get("marketing_consent") is True]
+
+    key = sort if sort in SORTABLE else "customer_score"
+    reverse = direction != "asc"
+    if key == "name":
+        rows = sorted(rows, key=lambda p: p["name"].lower(), reverse=reverse)
+    else:
+        rows = sorted(rows, key=lambda p: (p.get(key) is not None, p.get(key) or 0), reverse=reverse)
+
+    page = rows[offset:offset + limit]
+    top_products = {}
+    for p in page:
+        best = matching.best_products_for_customer(p, workspace.products, limit=1)
+        top_products[p["customer_id"]] = ({
+            "sku": best[0]["sku"], "name": best[0]["product_name"],
+            "match_pct": best[0]["match_pct"], "price": best[0]["price"],
+        } if best else None)
+
+    return {
+        "total": len(rows),
+        "offset": offset,
+        "limit": limit,
+        "customers": [{
+            "customer_id": p["customer_id"], "name": p["name"], "segment": p.get("segment"),
+            "segment_tone": p.get("segment_tone"), "customer_score": p.get("customer_score"),
+            "total_spend": p.get("total_spend"), "order_count": p.get("order_count"),
+            "avg_order_value": p.get("avg_order_value"), "last_purchase": p.get("last_purchase"),
+            "recency_days": p.get("recency_days"), "cadence_days": p.get("cadence_days"),
+            "overdue_ratio": p.get("overdue_ratio"), "store": p.get("store"),
+            "top_category": p.get("top_category"),
+            "contactable": p.get("marketing_consent") is True,
+            "data_confidence": p.get("data_confidence"),
+            "crm_record": p.get("crm_record", True),
+            "potential_annual_value": p.get("potential_annual_value"),
+            "recommended_product": top_products[p["customer_id"]],
+        } for p in page],
+        "facets": {
+            "segments": sorted({p.get("segment") for p in workspace.profiles if p.get("segment")}),
+            "stores": sorted({p.get("store") for p in workspace.profiles if p.get("store")}),
+        },
+    }
+
+
+@router.get("/customers/{customer_id}")
+def customer_detail(customer_id: str) -> dict[str, Any]:
+    profile = workspace.profile(customer_id)
+    if not profile:
+        raise HTTPException(404, "Customer not found.")
+
+    matches = matching.best_products_for_customer(profile, workspace.products, limit=6)
+    transactions = workspace.customer_transactions(customer_id)
+
+    return {
+        "profile": profile,
+        "recommendations": [{
+            **m, "expected_value": matching.expected_value(m, profile),
+        } for m in matches],
+        "timeline": [{
+            "date": str(t.get("date")) if t.get("date") else None,
+            "transaction_id": t.get("transaction_id"),
+            "product": t.get("product"),
+            "sku": t.get("sku"),
+            "category": t.get("category"),
+            "brand": t.get("brand"),
+            "color": t.get("color"),
+            "size": t.get("size"),
+            "quantity": t.get("quantity"),
+            "amount": t.get("line_total"),
+            "discount": t.get("discount"),
+            "store": t.get("store"),
+        } for t in transactions[:80]],
+        "opportunities": [{
+            "id": o["id"], "title": o["title"], "type": o["type"], "action": o["action"],
+        } for o in workspace.opportunities if customer_id in (o.get("customer_ids") or [])],
+    }
+
+
+@router.get("/customers/{customer_id}/narrative")
+def customer_narrative(customer_id: str) -> dict[str, Any]:
+    result = analyst.customer_narrative(customer_id)
+    if "error" in result:
+        raise HTTPException(404, result["error"])
+    return result
+
+
+@router.get("/segments")
+def segments() -> dict[str, Any]:
+    return {"segments": workspace.summary.get("segments", [])}
