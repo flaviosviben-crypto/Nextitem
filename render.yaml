@@ -57,10 +57,20 @@ services:
         value: "20.11.1"
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
-      # Resolved by Render to the API's real hostname, including any suffix it
-      # adds if the name is taken. Nothing to paste, nothing to keep in sync.
+      # Render resolves this to the API service's SLUG, not a domain: a name
+      # like "revenueos-api-6bxb", carrying the suffix Render adds when a name
+      # is taken. It is not usable as a URL on its own — prefixing it with
+      # https:// produces a dotless address that resolves nowhere, which is
+      # exactly how this deployment first broke. The proxy completes it to
+      # <slug>.onrender.com, so nothing here needs pasting or syncing.
       - key: BACKEND_HOST
         fromService:
           type: web
           name: revenueos-api
           property: host
+      # Escape hatch, normally unset. An absolute origin here is used verbatim
+      # and outranks BACKEND_HOST — including an internal address such as
+      # http://revenueos-api-6bxb:10000 if you later put both services on a
+      # paid plan and want traffic to stay on Render's private network.
+      - key: BACKEND_ORIGIN
+        sync: false

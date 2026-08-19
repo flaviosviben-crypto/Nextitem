@@ -28,6 +28,25 @@ its setup would live in a dashboard instead of in Git. Render's Blueprint
 creates both services, wires them together and enables auto-deploy from one
 file, which is the least ongoing manual work for this specific repository.
 
+**How the two services are wired, and the trap in it.** Render's
+`fromService` with `property: host` returns the service's **slug** — a name like
+`revenueos-api-6bxb`, carrying the suffix Render adds when a name is already
+taken. It is *not* a domain. Prefixing it with `https://` produces
+`https://revenueos-api-6bxb`, which has no DNS record anywhere, and every
+request fails to connect. That is how this deployment first broke.
+
+The public address is that slug under `onrender.com` — the same relationship
+the frontend shows, where slug `revenueos-web` is served at
+`revenueos-web.onrender.com`. `lib/backend.ts` completes a dotless value
+accordingly and leaves a real domain untouched, so `BACKEND_HOST` needs no
+manual value. `frontend/scripts/resolve-backend.test.mjs` pins this, with the
+exact production value as its first case.
+
+If you ever need something else — an internal address such as
+`http://revenueos-api-6bxb:10000` once both services are on a paid plan and can
+use Render's private network — set `BACKEND_ORIGIN` in the frontend service. It
+is used verbatim and outranks everything.
+
 **Why a route handler instead of a `next.config` rewrite.** Next.js compiles
 rewrite destinations into `routes-manifest.json` at *build* time. A build that
 runs without the platform's variable set bakes in `localhost`, and no amount of
@@ -81,6 +100,9 @@ what comes back, not whether something comes back:
 ./revenueos/scripts/verify-deployment.sh https://revenueos-web.onrender.com
 ```
 
+If a check fails with a 502, the body names the origin that was tried and which
+variable it came from, so a wiring fault is readable without opening the logs.
+
 Eleven assertions on content: opportunities are per-customer and every one names
 a customer, a reason and an action; the Action Center exposes the five workflow
 states; Performance keeps modelled figures labelled as modelled; no `undefined`
@@ -95,7 +117,8 @@ Allow ~60s on the first run after idling — see cold starts below.
 
 | Variable | Service | Set by | Needed? |
 |---|---|---|---|
-| `BACKEND_HOST` | frontend | Render, automatically | Never touch it |
+| `BACKEND_HOST` | frontend | Render, automatically | Never touch it — it is a slug, and the proxy completes it |
+| `BACKEND_ORIGIN` | frontend | You, only if overriding | Optional — a full origin, used verbatim |
 | `PORT` | both | Render, automatically | Never touch it |
 | `NODE_VERSION` / `PYTHON_VERSION` | frontend / API | `render.yaml` | Only to change runtime version |
 | `SEED_DEMO_ON_EMPTY` | API | `render.yaml`, `true` | Set to `false` once real data is imported |
