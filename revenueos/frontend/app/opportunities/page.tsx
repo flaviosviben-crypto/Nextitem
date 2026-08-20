@@ -11,7 +11,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronUp, ShieldOff } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, ShieldOff } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
 import {
   Badge,
@@ -38,20 +38,56 @@ const LIFECYCLE_TRIGGERS = new Set(["due", "at_risk", "win_back"]);
 
 export default function OpportunitiesPage() {
   const [trigger, setTrigger] = useState("");
-  const { data, loading, error, refresh } = useApi<OpportunityFeed>(
+  const { data, loading, slow, error, refresh, setData } = useApi<OpportunityFeed>(
     `/opportunities?trigger=${encodeURIComponent(trigger)}`,
     [trigger],
   );
-  const [handled, setHandled] = useState<Record<string, string>>({});
+  // Ids with a request in flight. Buttons disable while a decision is being
+  // recorded, so an impatient second click cannot send a second decision.
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [failed, setFailed] = useState<string | null>(null);
 
+  /**
+   * Record a decision, then take the card out of the inbox.
+   *
+   * The removal happens only after the API confirms, and it edits the same
+   * counts the response carries, so what is on screen always matches what the
+   * server would return on a refresh. Removing first and reconciling later
+   * looks faster and lies when the request fails.
+   */
   const act = async (opp: Opportunity, status: string) => {
-    setHandled((prev) => ({ ...prev, [opp.id]: status }));
+    if (pending.has(opp.id)) return;
+    setPending((prev) => new Set(prev).add(opp.id));
+    setFailed(null);
     try {
       await api.patch(`/actions/${encodeURIComponent(opp.id)}`, { status });
-    } catch {
-      setHandled((prev) => {
-        const next = { ...prev };
-        delete next[opp.id];
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              opportunities: prev.opportunities.filter((o) => o.id !== opp.id),
+              shown: Math.max(0, prev.shown - 1),
+              // The day still recommended it. Only the queue shrinks.
+              awaiting_decision: Math.max(0, prev.awaiting_decision - 1),
+              decisions_made: prev.decisions_made + 1,
+              influenced_value: Math.max(
+                0,
+                prev.influenced_value - (opp.influenced_value ?? 0),
+              ),
+            }
+          : prev,
+      );
+    } catch (err) {
+      // Nothing was recorded, so nothing leaves the inbox.
+      setFailed(
+        err instanceof Error
+          ? `${opp.customer_name}: ${err.message}`
+          : `Could not record that decision for ${opp.customer_name}.`,
+      );
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(opp.id);
         return next;
       });
     }
@@ -66,10 +102,12 @@ export default function OpportunitiesPage() {
         title="Today's Opportunities"
         subtitle={
           data
-            ? `RevenueOS selected these ${data.prioritized_today} ` +
-              `${data.prioritized_today === 1 ? "customer" : "customers"} from ` +
-              `${data.detected} detected ${data.detected === 1 ? "opportunity" : "opportunities"}. ` +
-              "This is today's list, not everything it found."
+            ? `${data.awaiting_decision} of ${data.prioritized_today} ` +
+              `${data.prioritized_today === 1 ? "recommendation" : "recommendations"} ` +
+              `still need a decision` +
+              (data.decisions_made > 0 ? ` · ${data.decisions_made} decided` : "") +
+              `. Selected from ${data.detected} detected ` +
+              `${data.detected === 1 ? "opportunity" : "opportunities"}.`
             : "Who to contact today, and what to say."
         }
         actions={
@@ -107,15 +145,39 @@ export default function OpportunitiesPage() {
 
       {error && <ErrorState message={error} onRetry={refresh} />}
 
+      {failed && (
+        <div className="mb-4 rounded-lg border border-[var(--critical)] bg-[color-mix(in_srgb,var(--critical)_10%,transparent)] px-3.5 py-2.5 text-[13px] text-[var(--ink)]">
+          {failed} — nothing was recorded, so the recommendation is still here.
+        </div>
+      )}
+
       {data && !loading && data.opportunities.length === 0 && (
-        <EmptyState
-          title="Nothing meets the bar today"
-          body={
-            data.detected > 0
-              ? "RevenueOS found weaker signals but none strong enough to interrupt someone over. A short list is the honest answer — check back tomorrow."
-              : "Import your customer and transaction exports to start seeing opportunities."
-          }
-        />
+        data.decisions_made > 0 ? (
+          /* Every recommendation has been ruled on. That is the day finished,
+             not an empty screen, and it must not read as one. */
+          <Card className="text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--good)_16%,transparent)]">
+              <Check size={19} className="text-[var(--good)]" />
+            </div>
+            <h2 className="mt-3 text-[17px] font-semibold">You&apos;re done for today</h2>
+            <p className="mx-auto mt-1.5 max-w-[440px] text-[13.5px] leading-relaxed text-[var(--ink-2)]">
+              All {data.prioritized_today} of today&apos;s recommendations have a decision.
+              RevenueOS will select the next list on the following run.
+            </p>
+            <Link href="/actions" className="mt-4 inline-block">
+              <Button variant="primary">View Action Center</Button>
+            </Link>
+          </Card>
+        ) : (
+          <EmptyState
+            title="Nothing meets the bar today"
+            body={
+              data.detected > 0
+                ? "RevenueOS found weaker signals but none strong enough to interrupt someone over. A short list is the honest answer — check back tomorrow."
+                : "Import your customer and transaction exports to start seeing opportunities."
+            }
+          />
+        )
       )}
 
       {data && !loading && data.opportunities.length > 0 && data.held_back > 0 && (
@@ -131,7 +193,7 @@ export default function OpportunitiesPage() {
           <OpportunityCard
             key={opp.id}
             opp={opp}
-            handledAs={handled[opp.id]}
+            busy={pending.has(opp.id)}
             onAct={(status) => act(opp, status)}
           />
         ))}
@@ -151,17 +213,17 @@ export default function OpportunitiesPage() {
 
 function OpportunityCard({
   opp,
-  handledAs,
+  busy,
   onAct,
 }: {
   opp: Opportunity;
-  handledAs?: string;
+  busy?: boolean;
   onAct: (status: string) => void;
 }) {
   const [showWhy, setShowWhy] = useState(false);
 
   return (
-    <Card className={handledAs ? "opacity-60 transition-opacity" : undefined}>
+    <Card className={busy ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
       {/* ---- Who ---- */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -183,7 +245,6 @@ function OpportunityCard({
             )}
           </div>
         </div>
-        {handledAs && <Badge color="var(--good)">{handledAs}</Badge>}
       </div>
 
       {/* ---- Why now ---- */}
@@ -206,19 +267,17 @@ function OpportunityCard({
       {/* ---- How to act ---- */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
         <p className="text-[13.5px] font-medium text-[var(--ink)]">{opp.action}</p>
-        {!handledAs && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="primary" size="sm" onClick={() => onAct("Approved")}>
-              Approve
-            </Button>
-            <Button size="sm" onClick={() => onAct("Scheduled")}>
-              Schedule
-            </Button>
-            <Button size="sm" onClick={() => onAct("Ignored")}>
-              Not now
-            </Button>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" size="sm" disabled={busy} onClick={() => onAct("Approved")}>
+            Approve
+          </Button>
+          <Button size="sm" disabled={busy} onClick={() => onAct("Scheduled")}>
+            Schedule
+          </Button>
+          <Button size="sm" disabled={busy} onClick={() => onAct("Ignored")}>
+            Not now
+          </Button>
+        </div>
       </div>
 
       {/* ---- The evidence, one click away and never in the way ---- */}

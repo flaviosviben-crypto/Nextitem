@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..analytics.opportunities import (
-    ACTION_STATES, CLOSED_STATES, OPEN_STATES, counts, todays_list,
+    ACTION_STATES, CLOSED_STATES, OPEN_STATES, awaiting_decision, counts, todays_list,
 )
 from ..workspace import workspace
 
@@ -36,7 +36,12 @@ def todays_opportunities(trigger: str = "", include_suppressed: bool = False,
     """
     everything = workspace.opportunities
     today = todays_list(everything)
-    rows = everything if scope == "detected" else today
+    # The default scope is a decision inbox, not an archive: a recommendation
+    # leaves it once an advisor has ruled on it, and stays gone across a refresh
+    # because the decision lives in the pipeline, not in the browser. It has not
+    # left the day — prioritized_today below still counts it.
+    inbox = awaiting_decision(everything, workspace.pipeline)
+    rows = {"detected": everything, "recommended": today}.get(scope, inbox)
     if trigger:
         rows = [o for o in rows if o["trigger"] == trigger]
 
@@ -47,11 +52,11 @@ def todays_opportunities(trigger: str = "", include_suppressed: bool = False,
         "scope": scope,
         "shown": len(rows),
         # The relationship the whole product hangs on, in every response.
-        **counts(everything),
+        **counts(everything, workspace.pipeline),
         "suppressed": suppressed[:50] if include_suppressed else [],
         "suppressed_count": len(suppressed),
-        "influenced_value": round(sum(o.get("influenced_value") or 0 for o in today), 2),
-        "incremental_value": round(sum(o.get("incremental_value") or 0 for o in today), 2),
+        "influenced_value": round(sum(o.get("influenced_value") or 0 for o in inbox), 2),
+        "incremental_value": round(sum(o.get("incremental_value") or 0 for o in inbox), 2),
         "triggers": sorted({o["trigger"] for o in everything}),
     }
 

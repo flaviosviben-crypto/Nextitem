@@ -419,15 +419,50 @@ def todays_list(opportunities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return today
 
 
-def counts(opportunities: list[dict[str, Any]]) -> dict[str, Any]:
-    """The one place the detected/prioritized relationship is expressed."""
+def decided_ids(pipeline: list[dict[str, Any]]) -> set[str]:
+    """Recommendations an advisor has already ruled on."""
+    return {r["id"] for r in pipeline
+            if r.get("status") and r["status"] != "New"}
+
+
+def awaiting_decision(opportunities: list[dict[str, Any]],
+                      pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Today's recommendations that still need a decision — the inbox.
+
+    A decision removes a recommendation from the queue but not from the day:
+    it was still recommended, and Performance has to keep counting it.
+    """
+    settled = decided_ids(pipeline)
+    return [o for o in todays_list(opportunities) if o["id"] not in settled]
+
+
+def counts(opportunities: list[dict[str, Any]],
+           pipeline: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """The one place the detected/recommended/decided relationship is expressed.
+
+    Pass the pipeline to get the decision split as well. Without it the counts
+    describe what the engine chose; with it they also describe what the advisor
+    has done about it.
+    """
     detected = len(opportunities)
     today = sum(1 for o in opportunities if o.get("prioritized_today"))
     eligible = sum(1 for o in opportunities
                    if o["priority"] >= PRIORITY_BAR and o["contactable"])
+    decision_split: dict[str, Any] = {}
+    if pipeline is not None:
+        waiting = len(awaiting_decision(opportunities, pipeline))
+        decision_split = {
+            # Still in the inbox.
+            "awaiting_decision": waiting,
+            # Ruled on. Together these always equal prioritized_today, which
+            # never shrinks — deciding is progress through the day, not a
+            # smaller day.
+            "decisions_made": today - waiting,
+        }
     return {
         "detected": detected,
         "prioritized_today": today,
+        **decision_split,
         # Cleared the bar but sat outside the day's capacity. Naming this keeps
         # the cap honest: these were held back, not judged unworthy.
         "held_back": max(0, eligible - today),

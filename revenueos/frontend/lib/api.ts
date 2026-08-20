@@ -197,7 +197,12 @@ export type ProductCard = {
 /** Detected is the universe the engine found; prioritized is today's workload. */
 export type OpportunityCounts = {
   detected: number;
+  /** How many were recommended today. Never shrinks when a decision is made. */
   prioritized_today: number;
+  /** Still in the inbox. */
+  awaiting_decision: number;
+  /** Ruled on. awaiting_decision + decisions_made === prioritized_today. */
+  decisions_made: number;
   held_back: number;
   not_contactable: number;
   daily_cap: number;

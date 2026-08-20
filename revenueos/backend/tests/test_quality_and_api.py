@@ -24,6 +24,19 @@ def client():
         yield c
 
 
+@pytest.fixture
+def inbox():
+    """A client with a freshly seeded, undecided queue.
+
+    Function-scoped on purpose: the startup tests call workspace.reset(), and
+    the decision tests below consume the queue, so anything sharing the
+    module-scoped fixture would depend on the order tests happen to run in.
+    """
+    workspace.load_demo()
+    with TestClient(app) as c:
+        yield c
+
+
 # ------------------------------------------------------------------ quality --
 
 def test_missing_consent_is_flagged_as_critical():
@@ -435,3 +448,73 @@ def test_startup_returns_immediately_however_slow_the_data_is(monkeypatch):
         assert elapsed < 1.0, f"startup blocked for {elapsed:.1f}s with a slow load"
         assert client.get("/api/health").json()["status"] == "loading"
         release.set()
+
+
+def test_a_decision_removes_the_recommendation_from_the_inbox(inbox):
+    """Today's Opportunities is a queue of undecided work, not an archive."""
+    before = inbox.get("/api/opportunities").json()
+    assert before["awaiting_decision"] == before["shown"]
+    target = before["opportunities"][0]["id"]
+
+    inbox.patch(f"/api/actions/{target}", json={"status": "Approved"})
+    after = inbox.get("/api/opportunities").json()
+
+    assert target not in [o["id"] for o in after["opportunities"]]
+    assert after["shown"] == before["shown"] - 1
+    assert after["awaiting_decision"] == before["awaiting_decision"] - 1
+    assert after["decisions_made"] == before["decisions_made"] + 1
+
+
+def test_deciding_never_shrinks_what_was_recommended_today(inbox):
+    """The queue empties; the day does not. Performance still counts all of it."""
+    before = inbox.get("/api/opportunities").json()
+    recommended = before["prioritized_today"]
+
+    for row in before["opportunities"][:2]:
+        inbox.patch(f"/api/actions/{row['id']}", json={"status": "Scheduled"})
+
+    after = inbox.get("/api/opportunities").json()
+    assert after["prioritized_today"] == recommended
+    assert inbox.get("/api/performance").json()["prioritized_today"] == recommended
+    assert inbox.get("/api/actions").json()["todays_list"] == recommended
+    # The three always reconcile: decided + waiting == recommended.
+    assert after["awaiting_decision"] + after["decisions_made"] == recommended
+
+
+def test_every_decision_type_clears_the_card(inbox):
+    """Approve, Schedule and Not now all take a recommendation out of the queue."""
+    for status in ("Approved", "Scheduled", "Ignored"):
+        feed = inbox.get("/api/opportunities").json()
+        target = feed["opportunities"][0]["id"]
+        inbox.patch(f"/api/actions/{target}", json={"status": status})
+        after = inbox.get("/api/opportunities").json()
+        assert target not in [o["id"] for o in after["opportunities"]], status
+        assert any(r["id"] == target and r["status"] == status
+                   for r in inbox.get("/api/actions").json()["rows"]), status
+
+
+def test_a_decided_recommendation_does_not_come_back_on_refresh(inbox):
+    """The decision lives in the pipeline, not in the browser."""
+    target = inbox.get("/api/opportunities").json()["opportunities"][0]["id"]
+    inbox.patch(f"/api/actions/{target}", json={"status": "Ignored"})
+
+    for _ in range(3):   # a refresh is just another GET
+        feed = inbox.get("/api/opportunities").json()
+        assert target not in [o["id"] for o in feed["opportunities"]]
+
+    # Still reachable where the audit lives, and in the full detected scope.
+    assert target in [o["id"] for o in
+                      inbox.get("/api/opportunities?scope=detected").json()["opportunities"]]
+
+
+def test_a_rejected_decision_leaves_the_queue_untouched(inbox):
+    """A failed write must not remove anything — the UI mirrors this."""
+    before = inbox.get("/api/opportunities").json()
+    target = before["opportunities"][0]["id"]
+
+    bad = inbox.patch(f"/api/actions/{target}", json={"status": "Nonsense"})
+    assert bad.status_code == 400
+
+    after = inbox.get("/api/opportunities").json()
+    assert target in [o["id"] for o in after["opportunities"]]
+    assert after["awaiting_decision"] == before["awaiting_decision"]

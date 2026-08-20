@@ -23,7 +23,7 @@ def overview() -> dict[str, Any]:
 
     summary = workspace.summary
     today = todays_list(workspace.opportunities)
-    opp_counts = counts(workspace.opportunities)
+    opp_counts = counts(workspace.opportunities, workspace.pipeline)
     report = workspace.performance or perf.report(workspace.pipeline,
                                                   workspace.transactions_raw)
 
