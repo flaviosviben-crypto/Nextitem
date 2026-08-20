@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { isTransientStatus, retryDelay, shouldRetry, sleep } from "./retry";
+
 const BASE = "/api";
 
 export class ApiError extends Error {
@@ -29,27 +31,48 @@ function timeoutSignal(): AbortSignal | undefined {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}${path}`, {
-      ...init,
-      headers: {
-        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-        ...(init?.headers || {}),
-      },
-      cache: "no-store",
-      signal: timeoutSignal(),
-    });
-  } catch (err) {
-    // A timeout or a dropped connection must become a message, never an
-    // indefinite wait: the caller has no other way to tell the two apart.
-    const timedOut = err instanceof Error && err.name === "TimeoutError";
-    throw new ApiError(
-      timedOut
-        ? "The RevenueOS API did not respond in time. If it is hosted on a free plan it may be asleep — wait a moment and try again."
-        : "Could not reach the RevenueOS API. Check that the API service is running.",
-      0,
-    );
+  const method = (init?.method || "GET").toUpperCase();
+  let res: Response | undefined;
+
+  // A deploy restarts the API for a few seconds and the platform answers 502
+  // meanwhile. Retrying a read quietly rides that out; see lib/retry for what
+  // is deliberately *not* retried.
+  for (let attempt = 1; ; attempt++) {
+    let failure: unknown;
+    try {
+      res = await fetch(`${BASE}${path}`, {
+        ...init,
+        headers: {
+          ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+          ...(init?.headers || {}),
+        },
+        cache: "no-store",
+        signal: timeoutSignal(),
+      });
+    } catch (err) {
+      failure = err;
+      res = undefined;
+    }
+
+    const status = res?.status;
+    if (res && !isTransientStatus(status!)) break;
+    if (!shouldRetry({ method, attempt, status })) {
+      if (res) break;   // transient, but out of attempts: report the response
+      // A timeout or a dropped connection must become a message, never an
+      // indefinite wait: the caller has no other way to tell the two apart.
+      const timedOut = failure instanceof Error && failure.name === "TimeoutError";
+      throw new ApiError(
+        timedOut
+          ? "The RevenueOS API did not respond in time. If it is hosted on a free plan it may be asleep — wait a moment and try again."
+          : "Could not reach the RevenueOS API. Check that the API service is running.",
+        0,
+      );
+    }
+    await sleep(retryDelay(attempt));
+  }
+
+  if (!res) {
+    throw new ApiError("Could not reach the RevenueOS API.", 0);
   }
   if (!res.ok) {
     let detail = res.statusText;

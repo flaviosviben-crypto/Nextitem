@@ -23,6 +23,18 @@ services:
     # service unreachable and the health check would never pass.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
+    # Which changes trigger a rebuild. rootDir only says *where* the build runs;
+    # without this, every push to the branch redeploys both services, so a
+    # frontend-only commit restarted the API and produced a 502 while it came
+    # back up. Paths are relative to the repository root.
+    buildFilter:
+      paths:
+        - revenueos/backend/**
+        - render.yaml
+      ignoredPaths:
+        # Never executed by the build or the running service.
+        - revenueos/backend/tests/**
+        - revenueos/backend/storage/**
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
@@ -52,6 +64,16 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /
+    # Same reasoning in reverse: a backend-only commit should not rebuild the
+    # web service. render.yaml appears in both filters on purpose — a change to
+    # shared deployment config legitimately affects both.
+    buildFilter:
+      paths:
+        - revenueos/frontend/**
+        - render.yaml
+      ignoredPaths:
+        # Node test files; `npm run build` does not read them.
+        - revenueos/frontend/scripts/**
     envVars:
       - key: NODE_VERSION
         value: "20.11.1"

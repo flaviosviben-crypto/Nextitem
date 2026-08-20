@@ -194,6 +194,23 @@ only in Render.
 
 ---
 
+## Which service a change redeploys
+
+`rootDir` says *where* a build runs, not *which* changes trigger one. Without a
+build filter every push to the branch redeployed both services, so a
+frontend-only commit restarted the API and the site showed a 502 until it came
+back. Each service now declares the paths it cares about, relative to the repo
+root:
+
+| Changed path | Rebuilds |
+|---|---|
+| `revenueos/frontend/**` | web |
+| `revenueos/backend/**` | api |
+| `render.yaml` | both — shared deployment config |
+| `revenueos/backend/tests/**` | neither — never run by the build or the service |
+| `revenueos/frontend/scripts/**` | neither — `npm run build` does not read them |
+| Documentation, `dev.sh`, `scripts/**` | neither |
+
 ## What happens when you push
 
 Push to `claude/startup-code-review-phxm28` → Render receives the webhook →
@@ -205,6 +222,19 @@ To deploy from `main` instead, merge the branch and change both `branch:` lines
 in `render.yaml`.
 
 ---
+
+## Surviving an API restart
+
+A deploy or a wake-from-idle takes the API away for a few seconds, and the
+platform answers 502 meanwhile. The API client retries a read up to three times
+with a 400ms then 1000ms backoff, keeping the loading state, so a routine
+restart no longer lands the user on an error screen. After that the failure is
+shown for what it is, with **Try again** still available.
+
+Writes are never retried. Replaying a decision or an upload after a gateway
+error risks applying it twice, since the first attempt may have reached the
+server before the connection broke. The policy lives in `frontend/lib/retry.ts`
+and is covered by tests.
 
 ## Limits worth knowing
 
