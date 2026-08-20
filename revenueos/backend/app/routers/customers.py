@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..ai import analyst
 from ..analytics import matching, segmentation
 from ..workspace import workspace
 
@@ -165,6 +164,12 @@ def customer_detail(customer_id: str) -> dict[str, Any]:
 
 @router.get("/customers/{customer_id}/narrative")
 def customer_narrative(customer_id: str) -> dict[str, Any]:
+    # Imported here, not at module scope: this pulls in the Anthropic SDK,
+    # which is the single largest cost of starting the API and is needed only
+    # when an AI surface is actually called. Paying it on every boot delays
+    # the port opening, which is what a platform waits for.
+    from ..ai import analyst
+
     result = analyst.customer_narrative(customer_id)
     if "error" in result:
         raise HTTPException(404, result["error"])

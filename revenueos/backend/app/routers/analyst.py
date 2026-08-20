@@ -10,7 +10,6 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from ..ai import analyst as analyst_ai
 from ..ai.client import status as ai_status
 
 router = APIRouter(tags=["analyst"])
@@ -34,9 +33,17 @@ def status() -> dict[str, Any]:
 @router.post("/ai/ask")
 def ask(payload: AskRequest) -> dict[str, Any]:
     history = [{"role": t.role, "content": t.content} for t in payload.history]
+    # Imported here, not at module scope: this pulls in the Anthropic SDK,
+    # which is the single largest cost of starting the API and is needed only
+    # when an AI surface is actually called. Paying it on every boot delays
+    # the port opening, which is what a platform waits for.
+    from ..ai import analyst as analyst_ai
+
     return analyst_ai.ask(payload.question.strip(), history)
 
 
 @router.get("/ai/brief")
 def brief() -> dict[str, Any]:
+    from ..ai import analyst as analyst_ai
+
     return analyst_ai.executive_brief()

@@ -6,7 +6,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..ai import analyst as analyst_ai
 from ..analytics import matching
 from ..workspace import workspace
 
@@ -74,6 +73,12 @@ def build(payload: CampaignRequest) -> dict[str, Any]:
         "estimated_value": round(estimated, 2),
         "contactable": sum(1 for a in audience if a.get("contactable")),
     }
+    # Imported here, not at module scope: this pulls in the Anthropic SDK,
+    # which is the single largest cost of starting the API and is needed only
+    # when an AI surface is actually called. Paying it on every boot delays
+    # the port opening, which is what a platform waits for.
+    from ..ai import analyst as analyst_ai
+
     copy = analyst_ai.campaign_copy(campaign)
     campaign.update({"rationale": copy.get("rationale"), "message": copy.get("message"),
                      "engine": copy.get("engine")})

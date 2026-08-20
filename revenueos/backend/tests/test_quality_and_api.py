@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import io
+import pathlib
 import threading
+import time
 from datetime import date, timedelta
 
 import pytest
@@ -383,3 +385,53 @@ def test_a_failed_data_load_leaves_the_api_running(monkeypatch):
     assert body["status"] == "degraded", "a broken load must be visible, not fatal"
     assert "seed exploded" in body["startup_error"]
     assert body["loaded"] is False
+
+
+def test_importing_the_app_does_not_load_the_anthropic_sdk():
+    """Boot cost decides whether a deploy survives its platform's port scan.
+
+    The SDK was the single largest import in the tree, pulled in eagerly by
+    three routers for a feature that is optional and not in the navigation. A
+    platform waits a fixed window for the port to open; spending it importing a
+    client nobody has asked for is how a working service is marked failed.
+    """
+    import subprocess
+    import sys
+
+    probe = subprocess.run(
+        [sys.executable, "-c",
+         "import sys, app.main; sys.exit(1 if 'anthropic' in sys.modules else 0)"],
+        cwd=str(pathlib.Path(__file__).resolve().parent.parent),
+        capture_output=True,
+    )
+    assert probe.returncode == 0, (
+        "anthropic is imported at boot again — check for a module-level "
+        "`from ..ai import analyst` in a router"
+    )
+
+
+def test_startup_returns_immediately_however_slow_the_data_is(monkeypatch):
+    """The startup event must not hold the port closed.
+
+    Uvicorn binds only after this event returns, and a platform that scans for
+    an open port gives up long before a throttled instance finishes rebuilding
+    the analytics pipeline. Loading belongs behind the running server.
+    """
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.workspace import workspace
+
+    release = threading.Event()
+    monkeypatch.setattr(workspace, "load", lambda: False)
+    monkeypatch.setattr(workspace, "load_demo",
+                        lambda *a, **k: release.wait(timeout=10))
+    monkeypatch.setenv("SEED_DEMO_ON_EMPTY", "true")
+    monkeypatch.setattr(main, "STARTUP_ERROR", None)
+    workspace.reset()
+
+    began = time.monotonic()
+    with TestClient(main.app) as client:          # __enter__ runs the startup event
+        elapsed = time.monotonic() - began
+        assert elapsed < 1.0, f"startup blocked for {elapsed:.1f}s with a slow load"
+        assert client.get("/api/health").json()["status"] == "loading"
+        release.set()

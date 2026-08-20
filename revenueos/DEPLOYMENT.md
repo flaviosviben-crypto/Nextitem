@@ -143,6 +143,25 @@ but nothing is listening: it crashed, failed to deploy, or is suspended. That is
 not a cold start — a sleeping service answers slowly and then succeeds. Check the
 API service's **Logs** and **Events** tabs in the Render dashboard.
 
+### Why the API starts the way it does
+
+A platform waits a fixed window for the service to open its port, then health
+checks it. Two things used to be spent inside that window, and a deploy that
+overran it was marked failed and served as a gateway error:
+
+| Cost | Fix |
+|---|---|
+| Rebuilding the analytics pipeline in uvicorn's startup event, which serves no request until it returns | Runs on a thread; the server listens immediately |
+| Importing the Anthropic SDK at boot — the largest import in the tree, for an optional feature not in the navigation | Imported on demand, inside the handlers that use it |
+
+Together those took cold start from 1.27s to 0.64s to an answering health check
+on a developer machine; the throttled free instance that failed was roughly
+fifteen times slower.
+
+Two tests hold the line: one asserts the startup event returns in under a second
+however slow the data load is, the other that importing the app does not pull in
+the SDK.
+
 `api.status: "loading"` means the service is up and rebuilding its analytics
 behind the running server. The API starts listening immediately and loads data
 on a thread, because uvicorn serves nothing — not even the health check — until

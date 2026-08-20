@@ -220,10 +220,16 @@ def describe_week(summary: dict[str, Any], trend: list[dict[str, Any]],
         lines.append("Risks. " + "; ".join(risks) + ".")
 
     if opportunities:
+        # Per-customer opportunities: a headline and a named customer, not the
+        # aggregate "plays" this used to summarise.
         top = opportunities[0]
-        total = sum(o.get("impact") or 0 for o in opportunities)
-        lines.append(f"Opportunities. {len(opportunities)} plays are open, worth an estimated "
-                     f"{_eur(total)}. The largest is: {top['title'].lower()}.")
+        total = sum(o.get("influenced_value") or 0 for o in opportunities)
+        who = top.get("customer_name") or "a customer"
+        headline = (top.get("headline") or "").lower() or "worth a conversation"
+        lines.append(
+            f"Opportunities. {len(opportunities)} customers are prioritised for today, "
+            f"worth an estimated {_eur(total)} if the list converts. "
+            f"The strongest is {who}: {headline}.")
 
     if opportunities:
         lines.append("Recommended actions. " + opportunities[0]["action"])
