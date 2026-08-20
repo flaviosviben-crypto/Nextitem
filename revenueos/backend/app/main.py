@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,22 +54,14 @@ for router in (data.router, overview.router, customers.router, products.router,
     app.include_router(router, prefix="/api")
 
 
-# Recorded rather than raised, and surfaced by /api/health. See _startup.
+# Startup state, reported by /api/health rather than raised. See _startup.
 STARTUP_ERROR: str | None = None
+_LOADING = False
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    """Restore the last workspace, or seed one, without ever being able to
-    take the service down.
-
-    An exception raised here aborts uvicorn's startup entirely: no routes, no
-    health check, and a hosting platform answers every request with a bare 502.
-    Loading data is best-effort work — a corrupt snapshot or a failed seed must
-    leave an empty but *running* API that can say what went wrong, not a dead
-    one that cannot.
-    """
-    global STARTUP_ERROR
+def _load_data() -> None:
+    """Restore or seed the workspace. Runs off the startup path — see _startup."""
+    global STARTUP_ERROR, _LOADING
     try:
         if workspace.is_loaded:
             return
@@ -87,18 +80,55 @@ def _startup() -> None:
             workspace.reset()
         except Exception:  # noqa: BLE001
             pass
+    finally:
+        _LOADING = False
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    """Start serving immediately; load data behind the running server.
+
+    Two failure modes are being avoided here, both of which end with a hosting
+    platform returning a bare 502 that explains nothing.
+
+    Uvicorn serves no request at all — not even the health check — until this
+    event returns. Rebuilding the analytics pipeline takes a couple of seconds
+    on a developer machine and far longer on a throttled shared instance, so
+    doing it inline risks the platform's health check timing out and marking an
+    otherwise healthy deploy as failed.
+
+    And an exception raised here aborts startup entirely, leaving no routes and
+    no way for the service to report its own failure. Loading data is
+    best-effort work: it belongs on a thread, with its outcome recorded.
+    """
+    global _LOADING
+    _LOADING = True
+    threading.Thread(target=_load_data, name="revenueos-load", daemon=True).start()
 
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    from .ai.client import status as ai_status
+    """Never fails. The platform decides whether a deploy succeeded from this.
+
+    If this endpoint can raise, a deploy can be marked failed for a reason that
+    has nothing to do with whether the API works — and a failed deploy is served
+    as a gateway error with no explanation.
+    """
+    try:
+        from .ai.client import status as ai_status
+        ai: object = ai_status()
+    except Exception as exc:  # noqa: BLE001
+        ai = {"available": False, "error": f"{type(exc).__name__}: {exc}"}
+
     return {
-        # "degraded" means the API is serving but has no data because loading
-        # failed. A caller can tell that apart from an empty boutique.
-        "status": "degraded" if STARTUP_ERROR else "ok",
+        # loading  — serving, data still being built behind the server
+        # degraded — serving, but the load failed and startup_error says why
+        # ok       — serving normally
+        "status": "degraded" if STARTUP_ERROR else "loading" if _LOADING else "ok",
         "startup_error": STARTUP_ERROR,
+        "loading": _LOADING,
         "loaded": workspace.is_loaded,
         "source": workspace.source,
         "computed_at": workspace.computed_at,
-        "ai": ai_status(),
+        "ai": ai,
     }

@@ -143,6 +143,13 @@ but nothing is listening: it crashed, failed to deploy, or is suspended. That is
 not a cold start — a sleeping service answers slowly and then succeeds. Check the
 API service's **Logs** and **Events** tabs in the Render dashboard.
 
+`api.status: "loading"` means the service is up and rebuilding its analytics
+behind the running server. The API starts listening immediately and loads data
+on a thread, because uvicorn serves nothing — not even the health check — until
+the startup event returns, and a pipeline that takes seconds on a laptop takes
+far longer on a throttled free instance. Doing it inline risks the platform's
+health check timing out and marking a healthy deploy as failed.
+
 `api.startup_error` names a failure that happened while loading data. The API
 records those rather than raising, so a bad snapshot or a failed seed leaves an
 empty but running service that can explain itself, instead of a dead one behind

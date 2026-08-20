@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import threading
 from datetime import date, timedelta
 
 import pytest
@@ -309,6 +310,52 @@ def test_deciding_on_an_action_does_not_change_the_detected_count(client):
     # over the course of a morning; progress belongs in the status tiles.
     assert after["todays_list"] == before["todays_list"]
     assert after["awaiting_decision"] == before["awaiting_decision"] - 1
+
+
+def test_health_answers_before_the_data_is_ready(monkeypatch):
+    """The server must listen immediately, whatever the data load is doing.
+
+    Uvicorn serves nothing — not even this endpoint — until the startup event
+    returns, so loading data inline lets a slow instance fail its platform
+    health check and be marked a failed deploy.
+    """
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.workspace import workspace
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_seed(*_a, **_k):
+        started.set()
+        release.wait(timeout=5)
+
+    monkeypatch.setattr(workspace, "load", lambda: False)
+    monkeypatch.setattr(workspace, "load_demo", slow_seed)
+    monkeypatch.setenv("SEED_DEMO_ON_EMPTY", "true")
+    monkeypatch.setattr(main, "STARTUP_ERROR", None)
+    workspace.reset()
+
+    with TestClient(main.app) as client:
+        assert started.wait(timeout=5), "the load should begin off the startup path"
+        body = client.get("/api/health").json()   # answers while the load runs
+        assert body["loading"] is True
+        assert body["status"] == "loading"
+        release.set()
+
+
+def test_health_never_fails_even_if_a_subsystem_does(monkeypatch):
+    """A platform decides deploy success from this endpoint, so it cannot raise."""
+    from fastapi.testclient import TestClient
+    from app import main
+    import app.ai.client as ai_client
+
+    monkeypatch.setattr(ai_client, "is_available",
+                        lambda: (_ for _ in ()).throw(RuntimeError("sdk broken")))
+    with TestClient(main.app) as client:
+        res = client.get("/api/health")
+    assert res.status_code == 200
+    assert res.json()["ai"]["available"] is False
 
 
 def test_a_failed_data_load_leaves_the_api_running(monkeypatch):
