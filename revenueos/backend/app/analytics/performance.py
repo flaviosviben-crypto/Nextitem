@@ -54,6 +54,7 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
     contacted = [r for r in recent if r.get("status") in CONTACTED_STATES]
     converted = [r for r in recent if r.get("status") == "Converted"]
     ignored = [r for r in recent if r.get("status") == "Ignored"]
+    decided = OPEN_STATES | CLOSED_STATES
 
     contacted_ids = {r["customer_id"] for r in contacted}
     conversion_rate = (len(converted) / len(contacted)) if contacted else None
@@ -107,9 +108,25 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
         "conversions": len(converted),
         "ignored": len(ignored),
         "open": sum(1 for r in recent if r.get("status") in OPEN_STATES),
-        "untouched": sum(1 for r in recent
-                         if r.get("status") not in OPEN_STATES | CLOSED_STATES),
+        # "Untouched" spans every detected opportunity, including the ones the
+        # engine never put in front of anyone. Reported as a single number it
+        # read as a backlog of work owed by the advisor. Split it: what is
+        # genuinely waiting on a decision today, and what was merely detected
+        # and held back. The old total stays for callers that want the sum.
+        "untouched": sum(1 for r in recent if r.get("status") not in decided),
+        "awaiting_decision": sum(1 for r in recent
+                                 if r.get("status") not in decided
+                                 and r.get("prioritized_today")),
+        "detected_not_recommended": sum(1 for r in recent
+                                        if r.get("status") not in decided
+                                        and not r.get("prioritized_today")),
         "conversion_rate": round(conversion_rate, 3) if conversion_rate is not None else None,
+        # The same sum Today's Opportunities and the Overview show, so a
+        # workspace with nothing measured yet can still say what is on the table.
+        # No new estimate: it adds up values already on the rows.
+        "prioritized_expected_value": round(
+            sum(float(r.get("influenced_value") or 0)
+                for r in recent if r.get("prioritized_today")), 2),
 
         "contacted_revenue": round(contacted_revenue, 2),
         "contacted_revenue_basis": (

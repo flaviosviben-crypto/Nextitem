@@ -43,6 +43,7 @@ check "overview has no undefined counts" /api/overview    "d['today']['opportuni
 check "opportunities are per-customer"   /api/opportunities "d['shown'] is not None and d['shown']>0 and all(o.get('customer_id') and o.get('customer_name') and o.get('why_now') and o.get('action') for o in d['opportunities'])"
 check "every opportunity is reachable"   /api/opportunities "all(o['contactable'] is True for o in d['opportunities'])"
 check "feed is a queue of undecided work" /api/opportunities "d['prioritized_today']<=d['detected'] and d['shown']==d['awaiting_decision'] and d['awaiting_decision']+d['decisions_made']==d['prioritized_today']"
+check "performance funnel separates waiting from held back" /api/performance "d['awaiting_decision']+d['detected_not_recommended']==d['untouched'] and d['awaiting_decision']<=d['prioritized_today']"
 check "action center has the 6 states"   /api/actions     "d['statuses']==['New','Approved','Scheduled','Contacted','Converted','Ignored']"
 check "action rows carry a reason"       /api/actions     "len(d['rows'])>0 and all(r.get('customer_name') and r.get('reason') for r in d['rows'])"
 check "performance separates the layers" /api/performance "'modelled, not measured' in d['incremental_revenue_basis'].lower() and bool(d['attribution_note'])"

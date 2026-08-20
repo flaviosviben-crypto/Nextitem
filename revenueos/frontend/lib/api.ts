@@ -360,7 +360,14 @@ export type Performance = {
   conversions: number;
   ignored: number;
   open: number;
+  /** Every detected row nobody has ruled on: awaiting_decision + detected_not_recommended. */
   untouched: number;
+  /** On today's list and still waiting on the advisor. */
+  awaiting_decision: number;
+  /** Detected, but never recommended — held back, not owed. */
+  detected_not_recommended: number;
+  /** Expected value sitting on today's recommended list. */
+  prioritized_expected_value: number;
   conversion_rate: number | null;
   contacted_revenue: number;
   contacted_revenue_basis: string;

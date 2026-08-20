@@ -13,7 +13,14 @@ import { Page, PageHeader } from "@/components/Shell";
 import { Card, ErrorState, SectionTitle, Skeleton, Stat, Td, Th, Value } from "@/components/ui";
 import { Funnel } from "@/components/charts";
 import { useApi, type Performance } from "@/lib/api";
-import { money, num, pct, triggerLabel } from "@/lib/format";
+import {
+  EXPECTED_VALUE,
+  EXPECTED_VALUE_HELP,
+  money,
+  num,
+  pct,
+  triggerLabel,
+} from "@/lib/format";
 
 const WINDOWS = [
   { days: 7, label: "7 days" },
@@ -97,7 +104,17 @@ export default function PerformancePage() {
                 RevenueOS has {num(data.opportunities_detected)} detected{" "}
                 {data.opportunities_detected === 1 ? "opportunity" : "opportunities"}, of which{" "}
                 {num(data.prioritized_today)} {data.prioritized_today === 1 ? "is" : "are"}{" "}
-                recommended for today.
+                recommended for today
+                {data.prioritized_expected_value > 0 && (
+                  <>
+                    , worth{" "}
+                    <span className="num font-semibold" title={EXPECTED_VALUE_HELP}>
+                      {money(data.prioritized_expected_value)}
+                    </span>{" "}
+                    {EXPECTED_VALUE.toLowerCase()}
+                  </>
+                )}
+                .
               </p>
               <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--ink-2)]">
                 Measured results appear here once advisors contact those customers and
@@ -159,8 +176,9 @@ export default function PerformancePage() {
                 ]}
               />
               <p className="mt-4 text-[12px] text-[var(--ink-3)]">
-                {num(data.untouched)} not yet reviewed · {num(data.open)} in progress ·{" "}
-                {num(data.ignored)} set aside.
+                {num(data.awaiting_decision)} awaiting a decision · {num(data.open)} in
+                progress · {num(data.ignored)} set aside ·{" "}
+                {num(data.detected_not_recommended)} detected but not recommended.
               </p>
               {/* Prioritisation is recomputed on each run rather than logged per
                   day, so this stage is current state, not a total for the window.

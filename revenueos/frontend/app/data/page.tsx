@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { AlertTriangle, Check, FileUp, Info, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, FileUp, Info, Sparkles } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
 import {
   Badge,
@@ -155,13 +155,27 @@ export default function DataPage() {
         subtitle="Three standard exports are all RevenueOS needs. Send them to us and we'll set the boutique up for you — or drop them in here and we'll map the columns, asking you only where we are unsure."
         actions={
           <>
-            <Button onClick={loadDemo} disabled={busy}>
-              <Sparkles size={14} /> Load demo boutique
-            </Button>
-            {summary.data?.loaded && (
-              <Button variant="danger" onClick={clearAll} disabled={busy}>
-                <Trash2 size={14} /> Delete all data
+            {/* Say the demo is loaded rather than offering to load it again:
+                the button read as "nothing here yet" on a workspace that was
+                already full. */}
+            {summary.data?.source === "demo" ? (
+              <span className="flex items-center gap-1.5 text-[13px] text-[var(--good)]">
+                <Check size={14} /> Demo boutique loaded
+              </span>
+            ) : (
+              <Button onClick={loadDemo} disabled={busy}>
+                <Sparkles size={14} /> Load demo boutique
               </Button>
+            )}
+            {summary.data?.loaded && (
+              /* Destructive and irreversible: available, never prominent. */
+              <button
+                onClick={clearAll}
+                disabled={busy}
+                className="text-[12.5px] text-[var(--muted)] underline-offset-2 transition-colors hover:text-[var(--critical)] hover:underline disabled:opacity-50"
+              >
+                Delete all data
+              </button>
             )}
           </>
         }

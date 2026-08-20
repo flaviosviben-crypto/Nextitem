@@ -11,7 +11,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronDown, ChevronUp, ShieldOff } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Info, ShieldOff } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
 import {
   Badge,
@@ -68,8 +68,8 @@ export default function OpportunitiesPage() {
               opportunities: prev.opportunities.filter((o) => o.id !== opp.id),
               shown: Math.max(0, prev.shown - 1),
               // The day still recommended it. Only the queue shrinks.
-              awaiting_decision: Math.max(0, prev.awaiting_decision - 1),
-              decisions_made: prev.decisions_made + 1,
+              awaiting_decision: Math.max(0, (prev.awaiting_decision ?? prev.shown) - 1),
+              decisions_made: (prev.decisions_made ?? 0) + 1,
               influenced_value: Math.max(
                 0,
                 prev.influenced_value - (opp.influenced_value ?? 0),
@@ -95,6 +95,15 @@ export default function OpportunitiesPage() {
 
   const triggers = data?.triggers || [];
 
+  // The feed *is* the awaiting queue: /opportunities defaults to the undecided
+  // set, so the number of rows it returns is the count of decisions still owed.
+  // Reading it from the rows rather than from a summary field means the header
+  // can never disagree with the cards under it, and it stays correct against an
+  // API build that predates the awaiting_decision/decisions_made fields — which
+  // is what rendered "undefined of 20".
+  const awaiting = data ? data.opportunities.length : 0;
+  const decided = data ? Math.max(0, data.prioritized_today - awaiting) : 0;
+
   return (
     <Page>
       <PageHeader
@@ -102,10 +111,10 @@ export default function OpportunitiesPage() {
         title="Today's Opportunities"
         subtitle={
           data
-            ? `${data.awaiting_decision} of ${data.prioritized_today} ` +
+            ? `${awaiting} of ${data.prioritized_today} ` +
               `${data.prioritized_today === 1 ? "recommendation" : "recommendations"} ` +
               `still need a decision` +
-              (data.decisions_made > 0 ? ` · ${data.decisions_made} decided` : "") +
+              (decided > 0 ? ` · ${decided} decided` : "") +
               `. Selected from ${data.detected} detected ` +
               `${data.detected === 1 ? "opportunity" : "opportunities"}.`
             : "Who to contact today, and what to say."
@@ -152,7 +161,7 @@ export default function OpportunitiesPage() {
       )}
 
       {data && !loading && data.opportunities.length === 0 && (
-        data.decisions_made > 0 ? (
+        decided > 0 ? (
           /* Every recommendation has been ruled on. That is the day finished,
              not an empty screen, and it must not read as one. */
           <Card className="text-center">
@@ -260,7 +269,11 @@ function OpportunityCard({
           <span className="num text-[15px] font-semibold text-[var(--ink)]">
             {money(opp.influenced_value)}
           </span>
-          <span className="text-[11.5px] text-[var(--muted)]">modelled, not a forecast</span>
+          {/* The caveat lives in the tooltip, not on the card. Repeating
+              "modelled, not a forecast" beside every figure made the number
+              read as a disclaimer rather than a number. */}
+          <Info size={12} className="text-[var(--muted)]" aria-hidden />
+          <span className="sr-only">{EXPECTED_VALUE_HELP}</span>
         </div>
       )}
 
@@ -286,7 +299,7 @@ function OpportunityCard({
         className="mt-3 flex items-center gap-1 text-[12px] text-[var(--ink-3)] transition-colors hover:text-[var(--ink-2)]"
       >
         {showWhy ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-        {showWhy ? "Hide the detail" : "Why this customer, and what it's worth"}
+        {showWhy ? "Hide the detail" : "Why this customer"}
       </button>
 
       {showWhy && (

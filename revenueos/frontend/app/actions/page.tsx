@@ -211,10 +211,15 @@ export default function ActionsPage() {
                             ))}
                           </select>
                           {/* Was its own column; folded in here so the reason
-                              column has the room it needs. */}
-                          <div className="mt-1 text-[11px] text-[var(--muted)]">
-                            {shortDate(row.updated_at || row.created_at)}
-                          </div>
+                              column has the room it needs. Only a decision has
+                              a date worth reading — falling back to created_at
+                              stamped today's date identically on every row,
+                              which is a column of noise, not information. */}
+                          {row.updated_at && (
+                            <div className="mt-1 text-[11px] text-[var(--muted)]">
+                              Decided {shortDate(row.updated_at)}
+                            </div>
+                          )}
                         </Td>
                       </tr>
                     ))}
