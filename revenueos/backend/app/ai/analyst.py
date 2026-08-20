@@ -289,3 +289,47 @@ def campaign_copy(campaign: dict[str, Any]) -> dict[str, Any]:
         "message": parts[1].strip() if len(parts) > 1 else None,
         "engine": "claude",
     }
+
+
+# --------------------------------------------------------------- outreach ---
+
+def polish_outreach(draft: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite a deterministic draft for tone. Never a source of new facts.
+
+    The template is the product; this only changes how it sounds. Every failure
+    path — no key, no SDK, an API error, a refusal, an empty completion, a model
+    that smuggled in a fact — returns the template untouched, because a boutique
+    would rather send a plain true sentence than a warm invented one.
+    """
+    if draft.get("kind") != "message" or not is_available():
+        return draft
+
+    payload = json.dumps({
+        "customer_first_name": facts.get("first_name"),
+        "channel": draft.get("channel"),
+        "permitted_facts": facts.get("facts_used", []),
+        "product": facts.get("product"),
+        "store": facts.get("store"),
+        "draft_subject": draft.get("subject"),
+        "draft_body": draft.get("body"),
+    }, ensure_ascii=False, default=str)
+
+    text = _call(prompts.OUTREACH_SYSTEM, f"Message to improve:\n{payload}", max_tokens=600)
+    if not text:
+        return draft
+
+    subject, body = draft.get("subject"), text.strip()
+    if body.lower().startswith("subject:"):
+        head, _, rest = body.partition("\n")
+        subject, body = head.split(":", 1)[1].strip(), rest.strip()
+    if not body:
+        return draft
+    # A rewrite that lost the customer's name, or grew past a message, is worse
+    # than the template it replaced.
+    if facts.get("first_name") and facts["first_name"] not in body:
+        return draft
+    if len(body) > 4 * len(draft.get("body") or ""):
+        return draft
+
+    return {**draft, "subject": subject or draft.get("subject"), "body": body,
+            "engine": "claude"}

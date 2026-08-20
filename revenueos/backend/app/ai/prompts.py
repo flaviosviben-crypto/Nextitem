@@ -74,3 +74,26 @@ computed from the boutique's own data. Write:
 If the boutique's data indicates Italian customers, write the message in Italian; otherwise
 write it in English. Never include a discount unless the campaign explicitly calls for one.
 """
+
+OUTREACH_SYSTEM = """You improve the tone of a single clienteling message that a boutique
+sales advisor is about to send to one named customer.
+
+You are given the facts the message may rest on and a deterministic draft that already uses
+them. Rewrite the draft so it reads like a person who knows this customer wrote it. Keep it
+under 70 words for a message, under 110 for an email body.
+
+Hard limits, in order of importance:
+1. Introduce no fact that is not in the supplied list. No discounts, no sale, no private
+   viewing, no event, no waiting list, no limited edition, no scarcity beyond the stock
+   figure given, no product attribute that was not supplied, no claim about the customer's
+   taste beyond the affinities given.
+2. Never mention the customer's purchase cycle, recency, spend, segment, score or that they
+   are "due" — that reasoning is for the advisor, not the customer.
+3. No emoji, no exclamation marks, no "Dear valued customer", no marketing register.
+4. Keep the customer's first name if one was given, and keep the closing offer to set the
+   piece aside.
+
+If the draft is already good, return it close to unchanged. Return only the message text.
+For an email, return the subject line on the first line prefixed with "Subject: ", then a
+blank line, then the body. Return nothing else.
+"""

@@ -8,9 +8,10 @@
  * defensible to a luxury house's legal team.
  */
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { Page, PageHeader } from "@/components/Shell";
+import { OutreachPanel } from "@/components/OutreachPanel";
 import {
   Badge,
   Card,
@@ -36,14 +37,28 @@ const STATE_COLOR: Record<string, string> = {
   Ignored: "var(--ink-3)",
 };
 
-/** "New" means nobody has decided yet — not that it is new, nor that it is due. */
-const STATUS_LABEL: Record<string, string> = { New: "Awaiting decision" };
+/**
+ * The stored states, said the way an advisor would.
+ *
+ * "New" means nobody has decided yet — not that it is new, nor that it is due.
+ * "Approved" means decided but not yet acted on, which is a queue, not an
+ * outcome. Both labels are presentation only: the pipeline, the audit trail and
+ * every performance figure keep the stored values, so nothing downstream has to
+ * learn a second vocabulary.
+ */
+const STATUS_LABEL: Record<string, string> = {
+  New: "Awaiting decision",
+  Approved: "Ready to contact",
+};
 
 export default function ActionsPage() {
   const [status, setStatus] = useState("");
   // Today's recommended workload, or the whole detected universe. Defaulting to
   // today keeps this screen a queue rather than a backlog to feel guilty about.
   const [scope, setScope] = useState<"today" | "all">("today");
+  // Which row has its outreach draft open. One at a time: this is a table, and
+  // two expanded drafts stop it being one.
+  const [drafting, setDrafting] = useState<string | null>(null);
   const { data, loading, error, refresh, setData } = useApi<ActionCenter>(
     `/actions?status=${encodeURIComponent(status)}&scope=${scope}`,
     [status, scope],
@@ -158,7 +173,8 @@ export default function ActionsPage() {
                   </thead>
                   <tbody>
                     {data.rows.map((row) => (
-                      <tr key={row.id} className="border-t border-[var(--line)]">
+                      <Fragment key={row.id}>
+                      <tr className="border-t border-[var(--line)]">
                         <Td>
                           <Link
                             href={`/customers/${encodeURIComponent(row.customer_id)}`}
@@ -223,8 +239,36 @@ export default function ActionsPage() {
                               Decided {shortDate(row.updated_at)}
                             </div>
                           )}
+                          {/* A row that is decided but not yet acted on still
+                              needs the thing the advisor came for. Reopening
+                              the draft here is what makes "Later" on the
+                              Opportunities panel a safe thing to press. */}
+                          {row.status === "Approved" && (
+                            <button
+                              onClick={() => setDrafting(drafting === row.id ? null : row.id)}
+                              className="mt-1 text-[11.5px] text-[var(--accent)] underline-offset-2 hover:underline"
+                            >
+                              {drafting === row.id ? "Hide draft" : "Draft outreach"}
+                            </button>
+                          )}
                         </Td>
                       </tr>
+                      {drafting === row.id && (
+                        <tr>
+                          <td colSpan={6} className="px-4 pb-4">
+                            <OutreachPanel
+                              opportunityId={row.id}
+                              customerName={row.customer_name}
+                              onDone={() => {
+                                setDrafting(null);
+                                refresh();
+                              }}
+                              onDismiss={() => setDrafting(null)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>

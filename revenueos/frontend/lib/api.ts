@@ -232,6 +232,36 @@ export type OpportunityCounts = {
   priority_bar: number;
 };
 
+/** A ready-to-use draft for one recommendation on one channel. */
+export type OutreachDraft = {
+  /** "message" is sent as written; "brief" is read before speaking. */
+  kind: "message" | "brief";
+  channel: string;
+  subject: string | null;
+  body: string | null;
+  talking_points: string[];
+  opportunity_id: string;
+  customer_id: string;
+  customer_name: string;
+  /** "template" always works; "claude" means an AI rewrote the tone. */
+  engine: "template" | "claude";
+  /** False when no phone/email is on file — never offer to open a channel then. */
+  contact_available: boolean;
+  channel_permitted: boolean;
+  deep_link: string | null;
+  facts_used: string[];
+  channels: { key: string; label: string; verb: string }[];
+  blocked: string[];
+  eligibility_status: string | null;
+  eligibility_reason: string | null;
+  status: string;
+  contacted_at: string | null;
+  sent_message: string | null;
+  action: string | null;
+  why_now: string | null;
+  influenced_value: number | null;
+};
+
 export type Opportunity = {
   id: string;
   customer_id: string;

@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import (
-    analyst, campaigns, customers, data, opportunities, overview, performance, products,
-    scenarios,
+    analyst, campaigns, customers, data, opportunities, outreach, overview, performance,
+    products, scenarios,
 )
 from .workspace import workspace
 
@@ -50,7 +50,8 @@ app.add_middleware(
 # Analyst, campaigns and scenarios stay mounted: the intelligence is preserved
 # and reachable by API, it simply no longer has a place in the primary navigation.
 for router in (data.router, overview.router, customers.router, products.router,
-               opportunities.router, performance.router, analyst.router, campaigns.router, scenarios.router):
+               opportunities.router, outreach.router, performance.router,
+               analyst.router, campaigns.router, scenarios.router):
     app.include_router(router, prefix="/api")
 
 

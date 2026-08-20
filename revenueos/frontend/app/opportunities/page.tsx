@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, ChevronUp, Info, ShieldOff } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
+import { OutreachPanel } from "@/components/OutreachPanel";
 import {
   Badge,
   Button,
@@ -46,6 +47,10 @@ export default function OpportunitiesPage() {
   // recorded, so an impatient second click cannot send a second decision.
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [failed, setFailed] = useState<string | null>(null);
+  // Recommendations the advisor approved in this session. They have already
+  // left the decision inbox — this keeps the outreach draft standing where the
+  // card was, so approving does not mean hunting for what to say next.
+  const [drafting, setDrafting] = useState<Opportunity[]>([]);
 
   /**
    * Record a decision, then take the card out of the inbox.
@@ -61,6 +66,12 @@ export default function OpportunitiesPage() {
     setFailed(null);
     try {
       await api.patch(`/actions/${encodeURIComponent(opp.id)}`, { status });
+      // Approve is the start of the outreach, not the end of the decision. The
+      // panel opens only once the decision is persisted — the same rule the
+      // card removal follows, for the same reason.
+      if (status === "Approved") {
+        setDrafting((prev) => (prev.some((o) => o.id === opp.id) ? prev : [opp, ...prev]));
+      }
       setData((prev) =>
         prev
           ? {
@@ -197,6 +208,21 @@ export default function OpportunitiesPage() {
           the bar but sit beyond a day&apos;s capacity. They stay detected and are
           reconsidered on the next run.
         </p>
+      )}
+
+      {drafting.length > 0 && (
+        <div className="mb-5 space-y-3">
+          <div className="eyebrow">Ready to contact</div>
+          {drafting.map((opp) => (
+            <OutreachPanel
+              key={opp.id}
+              opportunityId={opp.id}
+              customerName={opp.customer_name}
+              onDone={() => setDrafting((prev) => prev.filter((o) => o.id !== opp.id))}
+              onDismiss={() => setDrafting((prev) => prev.filter((o) => o.id !== opp.id))}
+            />
+          ))}
+        </div>
       )}
 
       <div className="space-y-3">
