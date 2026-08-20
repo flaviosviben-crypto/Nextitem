@@ -404,3 +404,58 @@ def test_normal_cadence_is_not_distorted_by_the_floor():
            _tx("C1", 100, 500, order="c")]
     p = customer_scoring.build_profiles([{"customer_id": "C1", "name": "Steady"}], txs, TODAY)[0]
     assert p["cadence_days"] == 100
+
+
+def _row(rid, status="New", prioritized=False):
+    return {"id": rid, "customer_id": rid, "status": status,
+            "prioritized_today": prioritized, "trigger": "due",
+            "created_at": TODAY.isoformat(), "influenced_value": 100.0}
+
+
+def test_funnel_separates_waiting_from_held_back():
+    """"Untouched" spans everything detected; the advisor only owes today's list.
+
+    The report used to publish a single "untouched" figure covering every
+    detected opportunity, which a screen then labelled as work not yet
+    reviewed — implying a backlog five times the size of the actual one.
+    """
+    from app.analytics import performance as perf
+
+    pipeline = ([_row(f"P{i}", prioritized=True) for i in range(20)]
+                + [_row(f"H{i}") for i in range(82)])
+    report = perf.report(pipeline, [], as_of=TODAY)
+
+    assert report["opportunities_detected"] == 102
+    assert report["prioritized_today"] == 20
+    # Only the recommended-and-undecided rows are waiting on a human.
+    assert report["awaiting_decision"] == 20
+    assert report["detected_not_recommended"] == 82
+    # The old total still adds up, so nothing that read it is now wrong.
+    assert report["untouched"] == 102
+
+
+def test_a_decision_leaves_the_waiting_count_and_lands_downstream():
+    from app.analytics import performance as perf
+
+    pipeline = [_row("P0", status="Contacted", prioritized=True),
+                _row("P1", status="Ignored", prioritized=True),
+                *[_row(f"P{i}", prioritized=True) for i in range(2, 20)],
+                *[_row(f"H{i}") for i in range(82)]]
+    report = perf.report(pipeline, [], as_of=TODAY)
+
+    assert report["awaiting_decision"] == 18
+    assert report["open"] == 1
+    assert report["ignored"] == 1
+    # Every recommendation is in exactly one of those three places.
+    assert (report["awaiting_decision"] + report["open"] + report["ignored"]
+            == report["prioritized_today"])
+    assert report["detected_not_recommended"] == 82
+
+
+def test_expected_value_reported_is_todays_list_only():
+    """The zero-state quotes this figure; it must not include held-back rows."""
+    from app.analytics import performance as perf
+
+    pipeline = [_row("P0", prioritized=True), _row("P1", prioritized=True), _row("H0")]
+    report = perf.report(pipeline, [], as_of=TODAY)
+    assert report["prioritized_expected_value"] == 200.0

@@ -100,29 +100,45 @@ export default function PerformancePage() {
               of zeroes that reads as a product which did not work. */}
           {data.customers_contacted === 0 && data.opportunities_detected > 0 && (
             <Card>
+              {/* The link between the two halves of the product, stated once:
+                  here is what the engine put on the table, and here is why the
+                  page below it is still empty. Both figures come from the API —
+                  a hard-coded number here would be a lie the moment the data
+                  changed. Expected is never presented as earned. */}
               <p className="text-[14px] leading-relaxed text-[var(--ink)]">
-                RevenueOS has {num(data.opportunities_detected)} detected{" "}
-                {data.opportunities_detected === 1 ? "opportunity" : "opportunities"}, of which{" "}
-                {num(data.prioritized_today)} {data.prioritized_today === 1 ? "is" : "are"}{" "}
-                recommended for today
-                {data.prioritized_expected_value > 0 && (
+                {data.prioritized_expected_value > 0 ? (
                   <>
-                    , worth{" "}
+                    RevenueOS identified{" "}
                     <span className="num font-semibold" title={EXPECTED_VALUE_HELP}>
                       {money(data.prioritized_expected_value)}
                     </span>{" "}
-                    {EXPECTED_VALUE.toLowerCase()}
+                    in {EXPECTED_VALUE.toLowerCase()} across today&apos;s{" "}
+                    {num(data.prioritized_today)}{" "}
+                    {data.prioritized_today === 1 ? "recommendation" : "recommendations"}, drawn
+                    from {num(data.opportunities_detected)} detected{" "}
+                    {data.opportunities_detected === 1 ? "opportunity" : "opportunities"}.
+                  </>
+                ) : (
+                  <>
+                    RevenueOS has {num(data.opportunities_detected)} detected{" "}
+                    {data.opportunities_detected === 1 ? "opportunity" : "opportunities"}, of
+                    which {num(data.prioritized_today)}{" "}
+                    {data.prioritized_today === 1 ? "is" : "are"} recommended for today.
                   </>
                 )}
-                .
               </p>
               <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--ink-2)]">
-                Measured results appear here once advisors contact those customers and
-                record what happened. Nothing on this page is estimated until then.
+                That is modelled, not earned. Measured commercial results appear here once
+                advisors contact those customers and record what happened.
               </p>
             </Card>
           )}
 
+          {/* Two halves of the same question — how much, and where it stopped —
+              so on a wide screen they are read together rather than a scroll
+              apart. They stack again below xl, where side-by-side would squeeze
+              the revenue rows past readability. */}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] xl:items-start">
           <Card>
             <SectionTitle
               title="Revenue"
@@ -170,7 +186,13 @@ export default function PerformancePage() {
               <Funnel
                 stages={[
                   { label: "Detected", value: data.opportunities_detected },
-                  { label: "Recommended", value: data.prioritized_today },
+                  { label: "Recommended today", value: data.prioritized_today },
+                  // Recommended splits into decided and still-waiting; showing
+                  // the decided half is what connects the inbox to this page.
+                  {
+                    label: "Decisions made",
+                    value: Math.max(0, data.prioritized_today - data.awaiting_decision),
+                  },
                   { label: "Contacted", value: data.customers_contacted },
                   { label: "Converted", value: data.conversions },
                 ]}
@@ -190,6 +212,7 @@ export default function PerformancePage() {
               </p>
             </Card>
           )}
+          </div>
 
           {data.by_trigger.length > 0 && (
             <Card padded={false}>

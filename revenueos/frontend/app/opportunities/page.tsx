@@ -111,12 +111,14 @@ export default function OpportunitiesPage() {
         title="Today's Opportunities"
         subtitle={
           data
-            ? `${awaiting} of ${data.prioritized_today} ` +
-              `${data.prioritized_today === 1 ? "recommendation" : "recommendations"} ` +
-              `still need a decision` +
-              (decided > 0 ? ` · ${decided} decided` : "") +
-              `. Selected from ${data.detected} detected ` +
-              `${data.detected === 1 ? "opportunity" : "opportunities"}.`
+            ? awaiting === 0 && decided > 0
+              ? `Every one of today's ${data.prioritized_today} recommendations has a decision.`
+              : `${awaiting} of ${data.prioritized_today} ` +
+                `${data.prioritized_today === 1 ? "recommendation" : "recommendations"} ` +
+                `still need a decision` +
+                (decided > 0 ? ` · ${decided} decided` : "") +
+                `. Selected from ${data.detected} detected ` +
+                `${data.detected === 1 ? "opportunity" : "opportunities"}.`
             : "Who to contact today, and what to say."
         }
         actions={
@@ -233,6 +235,13 @@ function OpportunityCard({
 
   return (
     <Card className={busy ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
+      {/* On a wide screen the card reads left to right in the order a
+          salesperson thinks — who and why now, then what to show them, then
+          what it is worth and the decision. Below xl it falls back to the
+          original stack; nothing is hidden at either width, it is the same
+          content in a shape that fits the screen it is on. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(210px,0.8fr)] xl:items-start xl:gap-7">
+      <div className="min-w-0">
       {/* ---- Who ---- */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -259,12 +268,34 @@ function OpportunityCard({
       {/* ---- Why now ---- */}
       <p className="mt-3 text-[14.5px] leading-relaxed text-[var(--ink)]">{opp.why_now}</p>
 
-      {/* ---- What, and why that ---- */}
-      {opp.product && <ProductSuggestion product={opp.product} />}
+      {/* ---- The evidence, one click away and never in the way ---- */}
+      {/* Sits under the reason it expands on, which is also the shortest
+          column — otherwise the card ended in a band of empty space as tall as
+          the product panel beside it. */}
+      <button
+        onClick={() => setShowWhy((v) => !v)}
+        className="mt-3 flex items-center gap-1 text-[12px] text-[var(--ink-3)] transition-colors hover:text-[var(--ink-2)]"
+      >
+        {showWhy ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {showWhy ? "Hide the detail" : "Why this customer"}
+      </button>
+      </div>
 
+      {/* ---- What, and why that ---- */}
+      <div className="min-w-0 xl:border-l xl:border-[var(--line)] xl:pl-7">
+        {opp.product ? (
+          <ProductSuggestion product={opp.product} />
+        ) : (
+          <p className="text-[12.5px] text-[var(--ink-3)]">
+            No piece matched well enough to recommend.
+          </p>
+        )}
+      </div>
+
+      <div className="min-w-0 xl:border-l xl:border-[var(--line)] xl:pl-7">
       {/* ---- What it is worth ---- */}
       {opp.influenced_value !== null && (
-        <div className="mt-3 flex items-baseline gap-2" title={EXPECTED_VALUE_HELP}>
+        <div className="flex items-baseline gap-2" title={EXPECTED_VALUE_HELP}>
           <span className="text-[12px] text-[var(--ink-3)]">{EXPECTED_VALUE}</span>
           <span className="num text-[15px] font-semibold text-[var(--ink)]">
             {money(opp.influenced_value)}
@@ -278,7 +309,7 @@ function OpportunityCard({
       )}
 
       {/* ---- How to act ---- */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4 xl:mt-3 xl:flex-col xl:items-stretch xl:border-t-0 xl:pt-0">
         <p className="text-[13.5px] font-medium text-[var(--ink)]">{opp.action}</p>
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" size="sm" disabled={busy} onClick={() => onAct("Approved")}>
@@ -293,14 +324,9 @@ function OpportunityCard({
         </div>
       </div>
 
-      {/* ---- The evidence, one click away and never in the way ---- */}
-      <button
-        onClick={() => setShowWhy((v) => !v)}
-        className="mt-3 flex items-center gap-1 text-[12px] text-[var(--ink-3)] transition-colors hover:text-[var(--ink-2)]"
-      >
-        {showWhy ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-        {showWhy ? "Hide the detail" : "Why this customer"}
-      </button>
+      </div>
+      </div>
+
 
       {showWhy && (
         <div className="mt-3 space-y-2.5 rounded-lg bg-[var(--raised)] p-4 text-[12px] leading-relaxed text-[var(--ink-2)]">
@@ -336,7 +362,7 @@ function OpportunityCard({
 function ProductSuggestion({ product }: { product: ProductCard }) {
   const reasons = useMemo(() => product.why.slice(0, 3), [product.why]);
   return (
-    <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--raised)] p-4">
+    <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--raised)] p-4 xl:mt-0">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="min-w-0">
           <span className="text-[14px] font-medium">{product.name}</span>

@@ -308,7 +308,9 @@ export function Th({
   return (
     <th
       className={clsx(
-        "sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--ink-3)]",
+        // text-left is explicit: a bare <th> centres its text by default, so
+        // every heading sat adrift over a left-aligned column.
+        "sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--ink-3)]",
         wrap ? "whitespace-normal" : "whitespace-nowrap",
         align === "right" && "text-right",
         className,

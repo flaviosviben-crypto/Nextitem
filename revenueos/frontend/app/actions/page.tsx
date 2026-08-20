@@ -134,13 +134,16 @@ export default function ActionsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[880px] table-fixed text-[13px]">
                   {/* Declared widths, so a long reason wraps inside its own
-                      column instead of resizing the table around it. */}
+                      column instead of resizing the table around it. They are
+                      percentages, so the whole table grows with the container
+                      and the extra desktop width lands where it is worth most:
+                      the reason, which was clamping mid-sentence. */}
                   <colgroup>
-                    <col className="w-[18%]" />
-                    <col className="w-[27%]" />
                     <col className="w-[16%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[12%]" />
+                    <col className="w-[30%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[11%]" />
                     <col className="w-[17%]" />
                   </colgroup>
                   <thead>

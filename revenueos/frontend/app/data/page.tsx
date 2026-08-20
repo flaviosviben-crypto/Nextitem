@@ -159,8 +159,17 @@ export default function DataPage() {
                 the button read as "nothing here yet" on a workspace that was
                 already full. */}
             {summary.data?.source === "demo" ? (
-              <span className="flex items-center gap-1.5 text-[13px] text-[var(--good)]">
-                <Check size={14} /> Demo boutique loaded
+              <span className="flex items-center gap-2.5 text-[13px] text-[var(--good)]">
+                <span className="flex items-center gap-1.5">
+                  <Check size={14} /> Demo boutique loaded
+                </span>
+                <button
+                  onClick={loadDemo}
+                  disabled={busy}
+                  className="text-[12.5px] text-[var(--ink-3)] underline-offset-2 transition-colors hover:text-[var(--ink)] hover:underline disabled:opacity-50"
+                >
+                  Reset demo data
+                </button>
               </span>
             ) : (
               <Button onClick={loadDemo} disabled={busy}>

@@ -292,11 +292,11 @@ export function PageHeader({
 }) {
   return (
     <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
+      <div className="min-w-0">
         {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
         <h1 className="text-[24px] font-semibold tracking-[-0.02em]">{title}</h1>
         {subtitle && (
-          <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-[var(--ink-2)]">
+          <p className="mt-1.5 max-w-[68ch] text-[13px] leading-relaxed text-[var(--ink-2)]">
             {subtitle}
           </p>
         )}
@@ -328,11 +328,23 @@ function SlowApiBanner() {
   );
 }
 
-// 1180px rather than 1360: the wider container spread related figures so far
-// apart they stopped reading as related, and left long text nowhere to wrap.
+/**
+ * The one place the desktop content width is decided.
+ *
+ * 1180px was chosen when every screen was a single stack of cards, and it
+ * showed: on a 1440px monitor roughly a third of the usable width was doing
+ * nothing while an operational table was squeezed into the middle. The answer
+ * is not a wider column of the same stack — long prose at 1400px is unreadable
+ * — it is a wider canvas that the pages spend on *columns*: Value beside
+ * Lifecycle, revenue beside the funnel, an opportunity card that reads left to
+ * right. Text that is genuinely prose is held back to PROSE below, so widening
+ * the container never widens a paragraph.
+ */
+export const PROSE = "max-w-[68ch]";
+
 export function Page({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto max-w-[1180px] px-5 py-7 lg:px-8">
+    <div className="mx-auto max-w-[1400px] px-5 py-7 lg:px-8 xl:px-10">
       <SlowApiBanner />
       {children}
     </div>

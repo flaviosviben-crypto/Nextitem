@@ -81,9 +81,13 @@ export default function OverviewPage() {
       <PageHeader eyebrow={greeting()} title="Overview" subtitle={today.note} />
 
       {/* ---- The one thing that matters today ---- */}
+      {/* The hero is the dominant element, and on a wide screen it earns that
+          by putting the headline figure beside the list it refers to rather
+          than above it — the same information, roughly half the height. */}
       <Card className="mb-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
+        <div className="grid gap-6 xl:grid-cols-[minmax(280px,340px)_1fr] xl:gap-8">
+        <div className="flex flex-wrap items-end justify-between gap-4 xl:flex-col xl:items-start xl:justify-start xl:gap-6">
+          <div className="min-w-0">
             <div className="eyebrow">Waiting for you today</div>
             <div className="num mt-1.5 text-[40px] font-semibold leading-none">
               {num(today.opportunities)}
@@ -97,7 +101,7 @@ export default function OverviewPage() {
               {FUNNEL.recommended} from {num(today.detected)}{" "}
               {today.detected === 1 ? "opportunity" : "opportunities"} detected
               {today.influenced_value > 0 && (
-                <span title={EXPECTED_VALUE_HELP}>
+                <span title={`${EXPECTED_VALUE_HELP} ${today.value_basis}`}>
                   {" · "}
                   {money(today.influenced_value)} {EXPECTED_VALUE.toLowerCase()}
                 </span>
@@ -112,7 +116,7 @@ export default function OverviewPage() {
         </div>
 
         {today.top.length > 0 && (
-          <div className="mt-5 space-y-2 border-t border-[var(--line)] pt-4">
+          <div className="space-y-2 border-t border-[var(--line)] pt-4 xl:mt-0 xl:border-l xl:border-t-0 xl:pl-8 xl:pt-0">
             {today.top.map((row) => (
               <Link
                 key={row.id}
@@ -146,11 +150,7 @@ export default function OverviewPage() {
           </div>
         )}
 
-        {today.influenced_value > 0 && (
-          <p className="mt-4 text-[11px] leading-relaxed text-[var(--ink-3)]">
-            {today.value_basis}
-          </p>
-        )}
+        </div>
       </Card>
 
       {/* ---- Did last month's work pay off? ---- */}
