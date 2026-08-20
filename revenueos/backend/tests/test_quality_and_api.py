@@ -309,3 +309,30 @@ def test_deciding_on_an_action_does_not_change_the_detected_count(client):
     # over the course of a morning; progress belongs in the status tiles.
     assert after["todays_list"] == before["todays_list"]
     assert after["awaiting_decision"] == before["awaiting_decision"] - 1
+
+
+def test_a_failed_data_load_leaves_the_api_running(monkeypatch):
+    """Startup work must never be able to take the service down.
+
+    An exception in the startup event aborts uvicorn entirely: no routes, no
+    health check, and the platform answers every request with a bare 502 that
+    says nothing. Verified by simulating a failing seed and checking the API
+    still serves and names the cause.
+    """
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.workspace import workspace
+
+    monkeypatch.setattr(workspace, "load", lambda: False)
+    monkeypatch.setattr(workspace, "load_demo", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("seed exploded")))
+    monkeypatch.setenv("SEED_DEMO_ON_EMPTY", "true")
+    monkeypatch.setattr(main, "STARTUP_ERROR", None)
+    workspace.reset()
+
+    with TestClient(main.app) as client:
+        body = client.get("/api/health").json()
+
+    assert body["status"] == "degraded", "a broken load must be visible, not fatal"
+    assert "seed exploded" in body["startup_error"]
+    assert body["loaded"] is False

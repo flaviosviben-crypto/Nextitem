@@ -138,6 +138,16 @@ It answers the three questions a blank page cannot distinguish between:
 The endpoint runs inside the frontend service, so it works even when the API is
 down — which is exactly when it is needed.
 
+**`api.status: 502` returned in milliseconds** means the API service is deployed
+but nothing is listening: it crashed, failed to deploy, or is suspended. That is
+not a cold start — a sleeping service answers slowly and then succeeds. Check the
+API service's **Logs** and **Events** tabs in the Render dashboard.
+
+`api.startup_error` names a failure that happened while loading data. The API
+records those rather than raising, so a bad snapshot or a failed seed leaves an
+empty but running service that can explain itself, instead of a dead one behind
+a gateway error.
+
 ---
 
 ## Environment variables to maintain

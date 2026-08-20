@@ -23,13 +23,25 @@ export async function GET() {
         ? AbortSignal.timeout(100_000)
         : undefined,
     });
-    const body = await res.json().catch(() => null);
+    const text = await res.text().catch(() => "");
+    let body: Record<string, unknown> | null = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
+    }
     api = {
       reachable: true,
       status: res.status,
       took_ms: Date.now() - started,
-      loaded: (body as { loaded?: boolean } | null)?.loaded ?? null,
-      source: (body as { source?: string } | null)?.source ?? null,
+      loaded: (body?.loaded as boolean | undefined) ?? null,
+      source: (body?.source as string | undefined) ?? null,
+      // A startup failure is recorded rather than fatal, so the API can say why
+      // it has no data instead of dying and leaving only a gateway error.
+      startup_error: (body?.startup_error as string | undefined) ?? null,
+      // When the platform answers instead of the app, its own words are the
+      // only evidence available from outside.
+      upstream_says: res.ok ? undefined : text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200),
     };
   } catch (err) {
     api = {

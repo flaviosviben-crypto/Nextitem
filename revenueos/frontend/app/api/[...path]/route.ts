@@ -57,6 +57,22 @@ async function proxy(req: NextRequest, ctx: { params: { path: string[] } }) {
 
   try {
     const res = await fetch(target, init);
+    // A gateway error is the platform saying nothing is listening on the API.
+    // Forwarding its HTML page surfaces a bare "Bad Gateway" in the UI, which
+    // reads as a bug in the request rather than a service that is not running.
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      return Response.json(
+        {
+          detail:
+            `The RevenueOS API at ${origin} is not responding (${res.status}). ` +
+            "The API service is starting, asleep, or has failed to deploy — " +
+            "check its status before retrying.",
+          backend_origin: origin,
+          upstream_status: res.status,
+        },
+        { status: 502 },
+      );
+    }
     return new Response(res.body, { status: res.status, headers: clean(res.headers) });
   } catch (err) {
     const reason = err instanceof Error ? err.message : "unknown error";
