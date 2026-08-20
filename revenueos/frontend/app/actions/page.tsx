@@ -12,6 +12,7 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import { Page, PageHeader } from "@/components/Shell";
 import { OutreachPanel } from "@/components/OutreachPanel";
+import { DeclineMenu, type Decline } from "@/components/DeclineReason";
 import {
   Badge,
   Card,
@@ -49,6 +50,9 @@ const STATE_COLOR: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   New: "Awaiting decision",
   Approved: "Ready to contact",
+  // "Ignored" reads as neglect. The advisor made a decision and gave a reason
+  // for it; the stored value stays "Ignored" so nothing downstream changes.
+  Ignored: "Set aside",
 };
 
 export default function ActionsPage() {
@@ -59,12 +63,22 @@ export default function ActionsPage() {
   // Which row has its outreach draft open. One at a time: this is a table, and
   // two expanded drafts stop it being one.
   const [drafting, setDrafting] = useState<string | null>(null);
+  // A row whose status control was moved to "Set aside". The change is not sent
+  // until a reason is chosen — the API requires one, and asking here keeps the
+  // two ways of setting something aside consistent.
+  const [declining, setDeclining] = useState<string | null>(null);
   const { data, loading, error, refresh, setData } = useApi<ActionCenter>(
     `/actions?status=${encodeURIComponent(status)}&scope=${scope}`,
     [status, scope],
   );
 
-  const update = async (row: ActionRow, next: string) => {
+  const update = async (row: ActionRow, next: string, decline?: Decline) => {
+    // Setting aside needs a reason first. Nothing is sent, and nothing on
+    // screen changes, until the advisor gives one.
+    if (next === "Ignored" && !decline) {
+      setDeclining(row.id);
+      return;
+    }
     // Optimistic: the advisor moved on before the request returned.
     setData((prev) =>
       prev
@@ -72,7 +86,10 @@ export default function ActionsPage() {
         : prev,
     );
     try {
-      await api.patch(`/actions/${encodeURIComponent(row.id)}`, { status: next });
+      await api.patch(`/actions/${encodeURIComponent(row.id)}`, {
+        status: next,
+        ...(decline ? { reason: decline.reason, reason_note: decline.note } : {}),
+      });
     } finally {
       refresh();
     }
@@ -216,7 +233,7 @@ export default function ActionsPage() {
                         <Td align="right">
                           <Value>{money(row.influenced_value)}</Value>
                         </Td>
-                        <Td>
+                        <Td className="relative">
                           <select
                             value={row.status}
                             onChange={(e) => update(row, e.target.value)}
@@ -229,6 +246,13 @@ export default function ActionsPage() {
                               </option>
                             ))}
                           </select>
+                          {declining === row.id && (
+                            <DeclineMenu
+                              align="left"
+                              onDecline={(d) => update(row, "Ignored", d)}
+                              onClose={() => setDeclining(null)}
+                            />
+                          )}
                           {/* Was its own column; folded in here so the reason
                               column has the room it needs. Only a decision has
                               a date worth reading — falling back to created_at
@@ -243,6 +267,18 @@ export default function ActionsPage() {
                               needs the thing the advisor came for. Reopening
                               the draft here is what makes "Later" on the
                               Opportunities panel a safe thing to press. */}
+                          {/* Why it was set aside, where the decision itself is
+                              — secondary text rather than a column, because it
+                              is only ever present on Ignored rows. */}
+                          {row.decline_reason_label && (
+                            <div
+                              className="mt-1 text-[11px] text-[var(--ink-3)]"
+                              title={row.decline_note ?? undefined}
+                            >
+                              {row.decline_reason_label}
+                              {row.decline_note ? ` — ${row.decline_note}` : ""}
+                            </div>
+                          )}
                           {row.status === "Approved" && (
                             <button
                               onClick={() => setDrafting(drafting === row.id ? null : row.id)}

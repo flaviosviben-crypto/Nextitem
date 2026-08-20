@@ -247,7 +247,8 @@ def test_a_failed_call_does_not_advance_the_workflow(client):
     assert client.get("/api/outreach/opp::nobody::due").status_code == 404
 
     opp = _first(client)
-    client.patch(f"/api/actions/{opp['id']}", json={"status": "Ignored"})
+    client.patch(f"/api/actions/{opp['id']}",
+                 json={"status": "Ignored", "reason": "low_relevance"})
     refused = client.post(f"/api/outreach/{opp['id']}/contacted", json={"channel": "email"})
     assert refused.status_code == 409
 

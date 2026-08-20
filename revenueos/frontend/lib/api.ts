@@ -319,13 +319,31 @@ export type ActionRow = {
   priority: number;
   status: string;
   note: string | null;
+  /** Why the advisor set it aside. Present only on Ignored rows. */
+  decline_reason?: string | null;
+  decline_reason_label?: string | null;
+  decline_note?: string | null;
+  contact_channel?: string | null;
+  contacted_at?: string | null;
   created_at: string;
   updated_at: string | null;
 };
 
+/** The structured reasons an advisor may give for "Not now". */
+export const DECLINE_REASONS: { code: string; label: string }[] = [
+  { code: "wrong_product", label: "Wrong product" },
+  { code: "contacted_recently", label: "Contacted recently" },
+  { code: "low_relevance", label: "Low relevance" },
+  { code: "save_for_later", label: "Save for later" },
+  { code: "other", label: "Other" },
+];
+
 export type ActionCenter = {
   rows: ActionRow[];
   counts: Record<string, number>;
+  /** Set-aside counts by reason code, for later analysis. */
+  decline_reasons: Record<string, number>;
+  decline_reason_labels: Record<string, string>;
   todays_list: number;
   awaiting_decision: number;
   detected_not_prioritized: number;

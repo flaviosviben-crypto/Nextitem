@@ -375,6 +375,15 @@ def _merge_pipeline(existing: list[dict[str, Any]], fresh: list[dict[str, Any]])
             row["status"] = prior.get("status", "New")
             row["note"] = prior.get("note")
             row["updated_at"] = prior.get("updated_at")
+            # Everything the advisor recorded, not just the status. A recompute
+            # that kept "Ignored" but dropped why, or kept "Contacted" but
+            # dropped when and how, would quietly erase the boutique's own
+            # record every time the opportunities were rebuilt.
+            for carried in ("decline_reason", "decline_reason_label", "decline_note",
+                            "contact_channel", "contacted_at", "outreach_message",
+                            "realised_value"):
+                if carried in prior:
+                    row[carried] = prior[carried]
         merged.append(row)
     # Preserve rows the advisor has acted on even if the opportunity faded.
     fresh_ids = {r["id"] for r in fresh}

@@ -486,7 +486,11 @@ def test_every_decision_type_clears_the_card(inbox):
     for status in ("Approved", "Scheduled", "Ignored"):
         feed = inbox.get("/api/opportunities").json()
         target = feed["opportunities"][0]["id"]
-        inbox.patch(f"/api/actions/{target}", json={"status": status})
+        # Setting aside additionally requires a reason; see test_decline_reasons.
+        payload = {"status": status}
+        if status == "Ignored":
+            payload["reason"] = "low_relevance"
+        inbox.patch(f"/api/actions/{target}", json=payload)
         after = inbox.get("/api/opportunities").json()
         assert target not in [o["id"] for o in after["opportunities"]], status
         assert any(r["id"] == target and r["status"] == status
@@ -496,7 +500,8 @@ def test_every_decision_type_clears_the_card(inbox):
 def test_a_decided_recommendation_does_not_come_back_on_refresh(inbox):
     """The decision lives in the pipeline, not in the browser."""
     target = inbox.get("/api/opportunities").json()["opportunities"][0]["id"]
-    inbox.patch(f"/api/actions/{target}", json={"status": "Ignored"})
+    inbox.patch(f"/api/actions/{target}",
+                json={"status": "Ignored", "reason": "contacted_recently"})
 
     for _ in range(3):   # a refresh is just another GET
         feed = inbox.get("/api/opportunities").json()

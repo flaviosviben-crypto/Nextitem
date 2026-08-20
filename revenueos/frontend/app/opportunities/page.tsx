@@ -14,6 +14,7 @@ import Link from "next/link";
 import { Check, ChevronDown, ChevronUp, Info, ShieldOff } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
 import { OutreachPanel } from "@/components/OutreachPanel";
+import { NotNowButton, type Decline } from "@/components/DeclineReason";
 import {
   Badge,
   Button,
@@ -23,7 +24,13 @@ import {
   FilterChip,
   Skeleton,
 } from "@/components/ui";
-import { api, useApi, type Opportunity, type OpportunityFeed, type ProductCard } from "@/lib/api";
+import {
+  api,
+  useApi,
+  type Opportunity,
+  type OpportunityFeed,
+  type ProductCard,
+} from "@/lib/api";
 import {
   EXPECTED_VALUE,
   EXPECTED_VALUE_HELP,
@@ -60,12 +67,15 @@ export default function OpportunitiesPage() {
    * server would return on a refresh. Removing first and reconciling later
    * looks faster and lies when the request fails.
    */
-  const act = async (opp: Opportunity, status: string) => {
+  const act = async (opp: Opportunity, status: string, decline?: Decline) => {
     if (pending.has(opp.id)) return;
     setPending((prev) => new Set(prev).add(opp.id));
     setFailed(null);
     try {
-      await api.patch(`/actions/${encodeURIComponent(opp.id)}`, { status });
+      await api.patch(`/actions/${encodeURIComponent(opp.id)}`, {
+        status,
+        ...(decline ? { reason: decline.reason, reason_note: decline.note } : {}),
+      });
       // Approve is the start of the outreach, not the end of the decision. The
       // panel opens only once the decision is persisted — the same rule the
       // card removal follows, for the same reason.
@@ -95,6 +105,9 @@ export default function OpportunitiesPage() {
           ? `${opp.customer_name}: ${err.message}`
           : `Could not record that decision for ${opp.customer_name}.`,
       );
+      // Re-raised so the card knows the save failed and can leave the reason
+      // the advisor chose on screen rather than silently discarding it.
+      throw err;
     } finally {
       setPending((prev) => {
         const next = new Set(prev);
@@ -231,7 +244,7 @@ export default function OpportunitiesPage() {
             key={opp.id}
             opp={opp}
             busy={pending.has(opp.id)}
-            onAct={(status) => act(opp, status)}
+            onAct={(status, decline) => act(opp, status, decline)}
           />
         ))}
       </div>
@@ -255,7 +268,7 @@ function OpportunityCard({
 }: {
   opp: Opportunity;
   busy?: boolean;
-  onAct: (status: string) => void;
+  onAct: (status: string, decline?: Decline) => Promise<void>;
 }) {
   const [showWhy, setShowWhy] = useState(false);
 
@@ -344,9 +357,7 @@ function OpportunityCard({
           <Button size="sm" disabled={busy} onClick={() => onAct("Scheduled")}>
             Schedule
           </Button>
-          <Button size="sm" disabled={busy} onClick={() => onAct("Ignored")}>
-            Not now
-          </Button>
+          <NotNowButton disabled={busy} onDecline={(d) => onAct("Ignored", d)} />
         </div>
       </div>
 

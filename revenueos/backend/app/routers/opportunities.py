@@ -8,7 +8,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..analytics.opportunities import (
-    ACTION_STATES, CLOSED_STATES, OPEN_STATES, awaiting_decision, counts, todays_list,
+    ACTION_STATES, CLOSED_STATES, DECLINE_REASONS, OPEN_STATES, awaiting_decision, counts,
+    todays_list,
 )
 from ..workspace import workspace
 
@@ -22,6 +23,10 @@ class ActionUpdate(BaseModel):
     status: str
     note: str | None = None
     realised_value: float | None = None
+    # Why the advisor set this aside. Required for Ignored: "no" without a
+    # reason tells the boutique nothing about where the engine is wrong.
+    reason: str | None = None
+    reason_note: str | None = None
 
 
 @router.get("/opportunities")
@@ -111,6 +116,13 @@ def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
         "converted_value": round(
             sum(r.get("realised_value") or r.get("influenced_value") or 0
                 for r in converted), 2),
+        # Structured for aggregation from the start: this is the boutique's own
+        # record of where its recommendations miss. Nothing consumes it yet.
+        "decline_reasons": {
+            code: sum(1 for r in scoped if r.get("decline_reason") == code)
+            for code in DECLINE_REASONS
+        },
+        "decline_reason_labels": DECLINE_REASONS,
         "converted_value_basis": (
             "Recorded sale value where the advisor entered one, otherwise the "
             "estimate that was on the card."),
@@ -121,6 +133,16 @@ def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
 def update_action(row_id: str, payload: ActionUpdate) -> dict[str, Any]:
     if payload.status not in PIPELINE_STATES:
         raise HTTPException(400, f"Status must be one of {', '.join(PIPELINE_STATES)}.")
+    # Setting something aside is the one decision that carries information the
+    # engine cannot derive for itself, so it is the one decision that must say
+    # why. Rejected before anything is written: a half-saved decision would
+    # leave the card gone from the inbox and the reason lost.
+    if payload.status == "Ignored":
+        if not payload.reason:
+            raise HTTPException(
+                400, f"A reason is required: {', '.join(DECLINE_REASONS)}.")
+        if payload.reason not in DECLINE_REASONS:
+            raise HTTPException(400, f"Unknown reason '{payload.reason}'.")
     row = next((r for r in workspace.pipeline if r["id"] == row_id), None)
     if not row:
         raise HTTPException(404, "Action not found.")
@@ -128,12 +150,28 @@ def update_action(row_id: str, payload: ActionUpdate) -> dict[str, Any]:
     # Approving an outreach is a human decision, and it is recorded as one: no
     # message reaches a customer without a name and a timestamp against it.
     row["status"] = payload.status
+    if payload.status == "Ignored":
+        row["decline_reason"] = payload.reason
+        row["decline_reason_label"] = DECLINE_REASONS[payload.reason]
+        # Free text is optional and only meaningful against "Other"; it is kept
+        # separate from `note` so the advisor's own notes are not overwritten.
+        row["decline_note"] = (payload.reason_note or "").strip()[:500] or None
+    else:
+        # Changing your mind clears the reason — a row that is now Approved
+        # must not still carry "wrong product" as its explanation.
+        row.pop("decline_reason", None)
+        row.pop("decline_reason_label", None)
+        row.pop("decline_note", None)
     if payload.note is not None:
         row["note"] = payload.note
     if payload.realised_value is not None:
         row["realised_value"] = payload.realised_value
     row["updated_at"] = datetime.utcnow().isoformat(timespec="seconds")
-    workspace.audit(row_id, payload.status, payload.note)
+    audit_note = payload.note
+    if payload.status == "Ignored":
+        audit_note = " · ".join(
+            p for p in (DECLINE_REASONS[payload.reason], payload.reason_note, payload.note) if p)
+    workspace.audit(row_id, payload.status, audit_note)
     workspace.refresh_performance()
     workspace.save()
     return row

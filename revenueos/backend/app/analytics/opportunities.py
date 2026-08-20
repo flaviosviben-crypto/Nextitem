@@ -476,6 +476,19 @@ def counts(opportunities: list[dict[str, Any]],
 
 # The advisor's workflow, in the order work actually moves through a boutique.
 ACTION_STATES = ["Approved", "Scheduled", "Contacted", "Converted", "Ignored"]
+
+# Why an advisor set a recommendation aside. Stored as a code rather than the
+# label, so the wording on screen can change without rewriting history and so
+# the counts can be aggregated later — a boutique's own record of where the
+# engine is wrong is worth more than any benchmark. Nothing reads these to
+# score or rank anything yet; this is collection, not learning.
+DECLINE_REASONS: dict[str, str] = {
+    "wrong_product": "Wrong product",
+    "contacted_recently": "Contacted recently",
+    "low_relevance": "Low relevance",
+    "save_for_later": "Save for later",
+    "other": "Other",
+}
 OPEN_STATES = {"Approved", "Scheduled", "Contacted"}
 CLOSED_STATES = {"Converted", "Ignored"}
 
