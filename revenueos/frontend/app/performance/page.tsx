@@ -66,29 +66,45 @@ export default function PerformancePage() {
 
       {data && !loading && (
         <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Commercial outcome first. Leading with how much the engine detected
+              answers a question about the engine; this page has to answer whether
+              any of it turned into activity a boutique can bank. */}
+          <div className="grid gap-3 sm:grid-cols-3">
             <Stat
-              label="Opportunities detected"
-              value={num(data.opportunities_detected)}
-              hint="Every customer that met the engine's criteria in this window"
+              label="Revenue after contact"
+              value={money(data.influenced_revenue)}
+              tone={data.influenced_revenue > 0 ? "good" : "default"}
+              hint="Observed. Spend within 30 days of a recorded contact — time-linked, not proof of cause."
             />
             <Stat
-              label="Customers contacted"
-              value={num(data.customers_contacted)}
-              hint="Recorded as contacted by an advisor"
+              label="Recommended customers contacted"
+              value={`${num(data.customers_contacted)} / ${num(data.prioritized_today)}`}
+              hint="Observed. How much of what RevenueOS recommended an advisor actually worked."
             />
             <Stat
-              label="Converted"
-              value={num(data.conversions)}
-              tone={data.conversions > 0 ? "good" : "default"}
-              hint="Advisor marked the conversation as resulting in a sale"
-            />
-            <Stat
-              label="Conversion rate"
+              label="Measured conversion rate"
               value={data.conversion_rate === null ? "—" : pct(data.conversion_rate)}
-              hint="Converted ÷ contacted. Measured, not modelled."
+              hint="Converted ÷ contacted. Measured from advisor outcomes, not modelled."
             />
           </div>
+
+          {/* Nothing measured yet is the normal state of a new workspace. Say what
+              is waiting and what will fill this page, rather than showing a wall
+              of zeroes that reads as a product which did not work. */}
+          {data.customers_contacted === 0 && data.opportunities_detected > 0 && (
+            <Card>
+              <p className="text-[14px] leading-relaxed text-[var(--ink)]">
+                RevenueOS has {num(data.opportunities_detected)} detected{" "}
+                {data.opportunities_detected === 1 ? "opportunity" : "opportunities"}, of which{" "}
+                {num(data.prioritized_today)} {data.prioritized_today === 1 ? "is" : "are"}{" "}
+                recommended for today.
+              </p>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--ink-2)]">
+                Measured results appear here once advisors contact those customers and
+                record what happened. Nothing on this page is estimated until then.
+              </p>
+            </Card>
+          )}
 
           <Card>
             <SectionTitle
@@ -137,7 +153,7 @@ export default function PerformancePage() {
               <Funnel
                 stages={[
                   { label: "Detected", value: data.opportunities_detected },
-                  { label: "Prioritized", value: data.prioritized_today },
+                  { label: "Recommended", value: data.prioritized_today },
                   { label: "Contacted", value: data.customers_contacted },
                   { label: "Converted", value: data.conversions },
                 ]}
@@ -151,7 +167,7 @@ export default function PerformancePage() {
                   Saying so keeps the funnel from implying history it does not have. */}
               <p className="mt-1.5 text-[12px] text-[var(--muted)]">
                 Detected, contacted and converted are counted across the window.
-                Prioritized is the current list — RevenueOS does not yet keep a
+                Recommended is the current list — RevenueOS does not yet keep a
                 per-day record of what it recommended.
               </p>
             </Card>

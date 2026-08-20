@@ -147,7 +147,10 @@ export function Shell({ children }: { children: ReactNode }) {
         })}
       </nav>
 
-      <main className="flex-1 pb-20 lg:ml-[232px] lg:pb-0">{children}</main>
+      {/* min-w-0 is load-bearing: a flex item defaults to min-width:auto and
+          refuses to shrink below its content, so a wide table pushed the whole
+          page sideways instead of scrolling inside its own container. */}
+      <main className="min-w-0 flex-1 pb-20 lg:ml-[232px] lg:pb-0">{children}</main>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
     </div>
@@ -325,9 +328,11 @@ function SlowApiBanner() {
   );
 }
 
+// 1180px rather than 1360: the wider container spread related figures so far
+// apart they stopped reading as related, and left long text nowhere to wrap.
 export function Page({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto max-w-[1360px] px-5 py-7 lg:px-8">
+    <div className="mx-auto max-w-[1180px] px-5 py-7 lg:px-8">
       <SlowApiBanner />
       {children}
     </div>

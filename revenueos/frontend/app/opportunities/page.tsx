@@ -21,10 +21,17 @@ import {
   ErrorState,
   FilterChip,
   Skeleton,
-  Value,
 } from "@/components/ui";
 import { api, useApi, type Opportunity, type OpportunityFeed, type ProductCard } from "@/lib/api";
-import { lifecycleColor, matchColor, money, triggerLabel, valueColor } from "@/lib/format";
+import {
+  EXPECTED_VALUE,
+  EXPECTED_VALUE_HELP,
+  lifecycleColor,
+  matchColor,
+  money,
+  triggerLabel,
+  valueColor,
+} from "@/lib/format";
 
 // Triggers whose meaning is already carried by the lifecycle badge beside them.
 const LIFECYCLE_TRIGGERS = new Set(["due", "at_risk", "win_back"]);
@@ -68,8 +75,10 @@ export default function OpportunitiesPage() {
         actions={
           data && data.influenced_value > 0 ? (
             <div className="text-right">
-              <div className="eyebrow">If today's list converts</div>
-              <div className="num text-[18px] font-semibold">{money(data.influenced_value)}</div>
+              <div className="num text-[20px] font-semibold">{money(data.influenced_value)}</div>
+              <div className="text-[12px] text-[var(--ink-2)]" title={EXPECTED_VALUE_HELP}>
+                {EXPECTED_VALUE} of today&apos;s list
+              </div>
             </div>
           ) : undefined
         }
@@ -158,7 +167,7 @@ function OpportunityCard({
         <div className="min-w-0">
           <Link
             href={`/customers/${encodeURIComponent(opp.customer_id)}`}
-            className="text-[16px] font-semibold tracking-[-0.01em] hover:underline"
+            className="text-[17px] font-semibold tracking-[-0.01em] hover:underline"
           >
             {opp.customer_name}
           </Link>
@@ -178,14 +187,25 @@ function OpportunityCard({
       </div>
 
       {/* ---- Why now ---- */}
-      <p className="mt-3 text-[14px] leading-relaxed text-[var(--ink)]">{opp.why_now}</p>
+      <p className="mt-3 text-[14.5px] leading-relaxed text-[var(--ink)]">{opp.why_now}</p>
 
       {/* ---- What, and why that ---- */}
       {opp.product && <ProductSuggestion product={opp.product} />}
 
+      {/* ---- What it is worth ---- */}
+      {opp.influenced_value !== null && (
+        <div className="mt-3 flex items-baseline gap-2" title={EXPECTED_VALUE_HELP}>
+          <span className="text-[12px] text-[var(--ink-3)]">{EXPECTED_VALUE}</span>
+          <span className="num text-[15px] font-semibold text-[var(--ink)]">
+            {money(opp.influenced_value)}
+          </span>
+          <span className="text-[11.5px] text-[var(--muted)]">modelled, not a forecast</span>
+        </div>
+      )}
+
       {/* ---- How to act ---- */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
-        <p className="text-[13px] font-medium text-[var(--ink)]">{opp.action}</p>
+        <p className="text-[13.5px] font-medium text-[var(--ink)]">{opp.action}</p>
         {!handledAs && (
           <div className="flex flex-wrap gap-2">
             <Button variant="primary" size="sm" onClick={() => onAct("Approved")}>
@@ -214,8 +234,7 @@ function OpportunityCard({
         <div className="mt-3 space-y-2.5 rounded-lg bg-[var(--raised)] p-4 text-[12px] leading-relaxed text-[var(--ink-2)]">
           {opp.evidence && <p>{opp.evidence}</p>}
           <p>
-            <span className="text-[var(--ink-3)]">If this converts: </span>
-            <Value>{money(opp.influenced_value)}</Value> —{" "}
+            <span className="text-[var(--ink-3)]">How the expected value is built: </span>
             {opp.value_basis.charAt(0).toLowerCase() + opp.value_basis.slice(1)}.
           </p>
           <p className="text-[var(--ink-3)]">{opp.probability_basis}.</p>

@@ -74,13 +74,13 @@ export default function ActionsPage() {
       {data && (
         <div className="mb-5 flex flex-wrap items-center gap-1.5">
           <FilterChip active={scope === "today"} onClick={() => setScope("today")}>
-            Today&apos;s list · {data.todays_list}
+            Recommended today · {data.todays_list}
           </FilterChip>
           <FilterChip active={scope === "all"} onClick={() => setScope("all")}>
             All detected · {data.detected}
           </FilterChip>
           <span className="ml-1 text-[12px] text-[var(--muted)]">
-            {data.awaiting_decision} of today&apos;s list still awaiting a decision ·{" "}
+            {data.awaiting_decision} of today&apos;s recommendations still awaiting a decision ·{" "}
             {data.detected_not_prioritized} detected but not prioritized for today
           </span>
         </div>
@@ -132,15 +132,24 @@ export default function ActionsPage() {
           ) : (
             <Card padded={false}>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-[13px]">
+                <table className="w-full min-w-[880px] table-fixed text-[13px]">
+                  {/* Declared widths, so a long reason wraps inside its own
+                      column instead of resizing the table around it. */}
+                  <colgroup>
+                    <col className="w-[18%]" />
+                    <col className="w-[27%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[17%]" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <Th>Customer</Th>
-                      <Th>Why</Th>
+                      <Th>Why now</Th>
                       <Th>Product</Th>
                       <Th>Channel</Th>
-                      <Th align="right">If it converts</Th>
-                      <Th>Updated</Th>
+                      <Th align="right" wrap>Expected value</Th>
                       <Th>Status</Th>
                     </tr>
                   </thead>
@@ -163,17 +172,22 @@ export default function ActionsPage() {
                             )}
                           </div>
                         </Td>
-                        <Td>
+                        <Td wrap>
                           <span className="text-[var(--ink-3)]">{triggerLabel(row.trigger)}</span>
-                          <div className="mt-0.5 max-w-[280px] text-[12px] leading-snug text-[var(--ink-2)]">
+                          <div
+                            className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-[var(--ink-2)]"
+                            title={row.reason ?? undefined}
+                          >
                             {row.reason}
                           </div>
                         </Td>
                         <Td>
-                          <Value>{row.product}</Value>
+                          <div className="truncate" title={row.product ?? undefined}>
+                            <Value>{row.product}</Value>
+                          </div>
                           {row.match_pct !== null && (
-                            <span className="ml-1.5 text-[11px] text-[var(--ink-3)]">
-                              {row.match_pct}%
+                            <span className="text-[11px] text-[var(--ink-3)]">
+                              {row.match_pct}% match
                             </span>
                           )}
                         </Td>
@@ -184,21 +198,23 @@ export default function ActionsPage() {
                           <Value>{money(row.influenced_value)}</Value>
                         </Td>
                         <Td>
-                          <Value>{shortDate(row.updated_at || row.created_at)}</Value>
-                        </Td>
-                        <Td>
                           <select
                             value={row.status}
                             onChange={(e) => update(row, e.target.value)}
-                            className={`${inputClass} py-1 text-[12px]`}
+                            className={`${inputClass} w-full max-w-full py-1 text-[12px]`}
                             style={{ color: STATE_COLOR[row.status] }}
                           >
                             {data.statuses.map((s) => (
                               <option key={s} value={s}>
-                                {s}
+                                {STATUS_LABEL[s] ?? s}
                               </option>
                             ))}
                           </select>
+                          {/* Was its own column; folded in here so the reason
+                              column has the room it needs. */}
+                          <div className="mt-1 text-[11px] text-[var(--muted)]">
+                            {shortDate(row.updated_at || row.created_at)}
+                          </div>
                         </Td>
                       </tr>
                     ))}

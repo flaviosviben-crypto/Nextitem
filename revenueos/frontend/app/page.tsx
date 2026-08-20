@@ -14,7 +14,18 @@ import { ArrowRight } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
 import { Badge, Button, Card, EmptyState, ErrorState, SectionTitle, Skeleton, Stat } from "@/components/ui";
 import { api, useApi, type Overview } from "@/lib/api";
-import { greeting, lifecycleColor, matchColor, money, num, pct, valueColor } from "@/lib/format";
+import {
+  EXPECTED_VALUE,
+  EXPECTED_VALUE_HELP,
+  FUNNEL,
+  greeting,
+  lifecycleColor,
+  matchColor,
+  money,
+  num,
+  pct,
+  valueColor,
+} from "@/lib/format";
 
 export default function OverviewPage() {
   const { data, loading, error, refresh } = useApi<Overview>("/overview");
@@ -77,15 +88,20 @@ export default function OverviewPage() {
             <div className="num mt-1.5 text-[40px] font-semibold leading-none">
               {num(today.opportunities)}
             </div>
-            <p className="mt-2 text-[13px] text-[var(--ink-2)]">
+            <p className="mt-2 text-[14px] text-[var(--ink-2)]">
               {today.opportunities === 1 ? "customer" : "customers"} worth a conversation
-              {today.influenced_value > 0 && <> · {money(today.influenced_value)} if they convert</>}
             </p>
             {/* The relationship, in one quiet line: the value is not the size of
                 the pile RevenueOS found, it is how little of it needs working. */}
-            <p className="mt-1 text-[12px] text-[var(--muted)]">
-              Prioritized from {num(today.detected)} detected{" "}
-              {today.detected === 1 ? "opportunity" : "opportunities"}
+            <p className="mt-1.5 text-[12.5px] text-[var(--muted)]">
+              {FUNNEL.recommended} from {num(today.detected)}{" "}
+              {today.detected === 1 ? "opportunity" : "opportunities"} detected
+              {today.influenced_value > 0 && (
+                <span title={EXPECTED_VALUE_HELP}>
+                  {" · "}
+                  {money(today.influenced_value)} {EXPECTED_VALUE.toLowerCase()}
+                </span>
+              )}
             </p>
           </div>
           <Link href="/opportunities">

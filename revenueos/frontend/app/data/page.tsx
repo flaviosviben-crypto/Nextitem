@@ -57,7 +57,11 @@ const FILES: { kind: Kind; title: string; blurb: string }[] = [
 
 export default function DataPage() {
   const summary = useApi<Summary>("/summary");
-  const quality = useApi<Quality>("/data/quality");
+  // The API answers 404 for quality when nothing is imported, which is correct
+  // but logs a console error on a perfectly normal empty workspace. Ask only
+  // once there is something to report on.
+  const quality = useApi<Quality>(summary.data?.loaded ? "/data/quality" : null,
+                                  [summary.data?.loaded]);
   const imports = useApi<{
     source: string;
     imports: { kind: string; filename: string; rows: number; at: string; delimiter: string; encoding: string }[];

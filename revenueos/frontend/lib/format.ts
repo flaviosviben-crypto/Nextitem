@@ -173,3 +173,39 @@ export function greeting(): string {
   if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
+
+// ------------------------------------------------------------- vocabulary ---
+
+/**
+ * One name per concept, used on every screen.
+ *
+ * The product previously said "detected", "prioritized", "today's list" and
+ * "opportunities" for two different things, which left a reader unsure whether
+ * a large number and a small one counted the same objects. These are the words
+ * to use; nothing else should name these stages.
+ */
+export const FUNNEL = {
+  customers: "Customers",
+  /** Everything the engine identified. The universe. */
+  detected: "Opportunities detected",
+  /** The subset RevenueOS puts in front of an advisor today. */
+  recommended: "Recommended today",
+  /** Recommendations an advisor has ruled on. */
+  decided: "Decisions made",
+  /** Outreach that actually happened. */
+  contacted: "Contacted",
+  /** A recorded purchase. */
+  converted: "Converted",
+} as const;
+
+/**
+ * Money that has not happened yet, and is not claimed to have happened.
+ *
+ * The figure is each recommendation's plausible basket multiplied by a modelled
+ * response rate. Calling it revenue would assert an outcome nobody has observed,
+ * so it is named for what it is everywhere it appears.
+ */
+export const EXPECTED_VALUE = "Expected value";
+export const EXPECTED_VALUE_HELP =
+  "Each recommendation's estimated purchase value × its modelled conversion " +
+  "probability. Modelled from retail benchmarks, not measured here.";

@@ -295,16 +295,21 @@ export function Meter({
 export function Th({
   children,
   align = "left",
+  wrap = false,
   className,
 }: {
   children: ReactNode;
   align?: "left" | "right";
+  /** Allow a two-word heading to break. Under table-fixed a nowrap heading
+   *  cannot widen its column, so it spills instead. */
+  wrap?: boolean;
   className?: string;
 }) {
   return (
     <th
       className={clsx(
-        "sticky top-0 z-10 whitespace-nowrap border-b border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--ink-3)]",
+        "sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--ink-3)]",
+        wrap ? "whitespace-normal" : "whitespace-nowrap",
         align === "right" && "text-right",
         className,
       )}
@@ -317,16 +322,21 @@ export function Th({
 export function Td({
   children,
   align = "left",
+  wrap = false,
   className,
 }: {
   children: ReactNode;
   align?: "left" | "right";
+  /** Let prose wrap. Cells are nowrap by default so figures and dates stay on
+   *  one line, but that also silently defeats any line-clamp inside them. */
+  wrap?: boolean;
   className?: string;
 }) {
   return (
     <td
       className={clsx(
-        "whitespace-nowrap border-b border-[var(--line)] px-4 py-2.5 text-[13px]",
+        "border-b border-[var(--line)] px-4 py-2.5 text-[13px] align-top",
+        wrap ? "whitespace-normal" : "whitespace-nowrap",
         align === "right" && "num text-right",
         className,
       )}
