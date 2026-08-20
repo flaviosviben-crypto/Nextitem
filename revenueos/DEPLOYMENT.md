@@ -103,11 +103,18 @@ what comes back, not whether something comes back:
 If a check fails with a 502, the body names the origin that was tried and which
 variable it came from, so a wiring fault is readable without opening the logs.
 
-Eleven assertions on content: opportunities are per-customer and every one names
+Thirteen assertions on content: opportunities are per-customer and every one names
 a customer, a reason and an action; the Action Center exposes the five workflow
 states; Performance keeps modelled figures labelled as modelled; no `undefined`
-counts. Every check is issued against the **frontend** origin, so passing also
-proves the proxy reaches the API.
+counts.
+
+One check reconciles *across* screens: Overview, Opportunities, Action Center and
+Performance must report the same detected and prioritized counts. That is the
+ambiguity — "do I have 228 opportunities or 20?" — the vocabulary was introduced
+to remove, and it is a relationship no single endpoint can prove on its own.
+
+Every check is issued against the **frontend** origin, so passing also proves the
+proxy reaches the API.
 
 Allow ~60s on the first run after idling — see cold starts below.
 
