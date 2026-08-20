@@ -19,6 +19,7 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  FilterChip,
   Skeleton,
   Value,
 } from "@/components/ui";
@@ -58,7 +59,10 @@ export default function OpportunitiesPage() {
         title="Today's Opportunities"
         subtitle={
           data
-            ? `${data.shown} ${data.shown === 1 ? "customer" : "customers"} worth a conversation today.`
+            ? `RevenueOS selected these ${data.prioritized_today} ` +
+              `${data.prioritized_today === 1 ? "customer" : "customers"} from ` +
+              `${data.detected} detected ${data.detected === 1 ? "opportunity" : "opportunities"}. ` +
+              "This is today's list, not everything it found."
             : "Who to contact today, and what to say."
         }
         actions={
@@ -98,11 +102,19 @@ export default function OpportunitiesPage() {
         <EmptyState
           title="Nothing meets the bar today"
           body={
-            data.total_detected > 0
+            data.detected > 0
               ? "RevenueOS found weaker signals but none strong enough to interrupt someone over. A short list is the honest answer — check back tomorrow."
               : "Import your customer and transaction exports to start seeing opportunities."
           }
         />
+      )}
+
+      {data && !loading && data.opportunities.length > 0 && data.held_back > 0 && (
+        <p className="mb-4 text-[12px] text-[var(--muted)]">
+          {data.held_back} further {data.held_back === 1 ? "opportunity" : "opportunities"} cleared
+          the bar but sit beyond a day&apos;s capacity. They stay detected and are
+          reconsidered on the next run.
+        </p>
       )}
 
       <div className="space-y-3">
@@ -125,29 +137,6 @@ export default function OpportunitiesPage() {
         </p>
       )}
     </Page>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={
-        active
-          ? "rounded-full border border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] px-3 py-1 text-[12px] font-medium text-[var(--ink)]"
-          : "rounded-full border border-[var(--line)] px-3 py-1 text-[12px] text-[var(--ink-2)] transition-colors hover:border-[var(--line-strong)]"
-      }
-    >
-      {children}
-    </button>
   );
 }
 

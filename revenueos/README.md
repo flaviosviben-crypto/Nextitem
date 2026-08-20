@@ -24,7 +24,7 @@ is an advisor not calling customers.
 | **Today's Opportunities** | The heart of the product. The customers worth a conversation today, each with one reason and one thing to do. |
 | **Action Center** | What the advisor committed to: Approved → Scheduled → Contacted → Converted / Ignored, with an audit trail behind every change. |
 | **Customers** | The base, filtered by value *or* by buying cycle. Customer Detail answers one question: why is RevenueOS telling me to contact this person? |
-| **Performance** | Opportunities generated, customers contacted, conversion rate, and revenue — separated into what was observed and what is estimated. |
+| **Performance** | Opportunities detected, customers contacted, conversion rate, and revenue — separated into what was observed and what is estimated. |
 | **Data** | Three standard exports in, mapped automatically, with a health score and a plain list of what is missing. |
 
 The analyst tool-runner, campaign builder and scenario modelling are still in the
@@ -42,6 +42,28 @@ Every card answers five questions, in the order an advisor thinks:
 3. **What** — the specific piece to put in front of them.
 4. **Why that piece** — *"Leather Goods is 86% of their spend · Size One Size is the size they buy in leather goods · €1,100 sits inside their usual €400–€1,110."*
 5. **How to act** — named only in a channel that customer has actually agreed to.
+
+### Detected and prioritized are different numbers
+
+RevenueOS reports two counts everywhere, and they mean different things:
+
+| | What it is |
+|---|---|
+| **Detected** | Every customer that met the engine's criteria. The opportunity universe. |
+| **Prioritized for today** | The subset RevenueOS recommends actually working now. |
+
+> 102 opportunities detected → 20 prioritized for today
+
+The value is not the size of the pile. It is how little of it needs working.
+
+The selection is a rule, not a display limit: an opportunity must clear a
+**priority bar** (`PRIORITY_BAR`) *and* have an open contact channel, and the day
+has a **capacity cap** (`DAILY_CAP`). Anything that clears the bar but exceeds
+capacity is reported as *held back* rather than silently dropped.
+
+The decision is made once per pipeline run and stamped onto every detected
+opportunity, so Overview, Opportunities, Action Center and Performance read one
+answer instead of each computing its own.
 
 Two rules govern the list:
 

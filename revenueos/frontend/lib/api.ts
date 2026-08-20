@@ -194,6 +194,16 @@ export type ProductCard = {
   risk_class: string | null;
 };
 
+/** Detected is the universe the engine found; prioritized is today's workload. */
+export type OpportunityCounts = {
+  detected: number;
+  prioritized_today: number;
+  held_back: number;
+  not_contactable: number;
+  daily_cap: number;
+  priority_bar: number;
+};
+
 export type Opportunity = {
   id: string;
   customer_id: string;
@@ -221,10 +231,10 @@ export type Opportunity = {
   cycle_confidence: string | null;
 };
 
-export type OpportunityFeed = {
+export type OpportunityFeed = OpportunityCounts & {
   opportunities: Opportunity[];
   shown: number;
-  total_detected: number;
+  scope: string;
   suppressed: Opportunity[];
   suppressed_count: number;
   influenced_value: number;
@@ -258,6 +268,10 @@ export type ActionRow = {
 export type ActionCenter = {
   rows: ActionRow[];
   counts: Record<string, number>;
+  todays_list: number;
+  awaiting_decision: number;
+  detected_not_prioritized: number;
+  detected: number;
   total: number;
   statuses: string[];
   open: number;
@@ -268,9 +282,10 @@ export type ActionCenter = {
 
 export type Overview = {
   loaded: boolean;
-  today?: {
+  today?: OpportunityCounts & {
     opportunities: number;
     note: string;
+    relationship: string;
     influenced_value: number;
     value_basis: string;
     top: {
@@ -311,7 +326,8 @@ export type Overview = {
 export type Performance = {
   loaded: boolean;
   window_days: number;
-  opportunities_generated: number;
+  opportunities_detected: number;
+  prioritized_today: number;
   customers_contacted: number;
   conversions: number;
   ignored: number;

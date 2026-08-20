@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from ..analytics import performance as perf
-from ..analytics.opportunities import daily
+from ..analytics.opportunities import counts, todays_list
 from ..workspace import workspace
 
 router = APIRouter(tags=["overview"])
@@ -22,7 +22,8 @@ def overview() -> dict[str, Any]:
         return {"loaded": False}
 
     summary = workspace.summary
-    today = daily(workspace.opportunities)
+    today = todays_list(workspace.opportunities)
+    opp_counts = counts(workspace.opportunities)
     report = workspace.performance or perf.report(workspace.pipeline,
                                                   workspace.transactions_raw)
 
@@ -30,11 +31,18 @@ def overview() -> dict[str, Any]:
         "loaded": True,
         "today": {
             "opportunities": len(today),
+            # Same numbers the Opportunities screen and Performance report use;
+            # they all read one stamp rather than each deciding for themselves.
+            **opp_counts,
             # Stated plainly so a short list reads as an honest day, not a fault.
             "note": ("Nothing meets the bar today — the data is current, there is "
                      "simply nobody worth interrupting."
                      if not today else
                      f"{len(today)} customers are worth a conversation today."),
+            "relationship": (
+                f"{len(today)} prioritized for today · "
+                f"{opp_counts['detected']} "
+                f"{'opportunity' if opp_counts['detected'] == 1 else 'opportunities'} detected"),
             "influenced_value": round(sum(o.get("influenced_value") or 0 for o in today), 2),
             "value_basis": ("Recommended piece and each customer's own basket, weighted "
                             "by a modelled response rate. Not a forecast."),

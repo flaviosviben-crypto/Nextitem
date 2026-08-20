@@ -258,3 +258,54 @@ def test_ai_endpoint_degrades_without_a_key(client):
     body = client.post("/api/ai/ask", json={"question": "Who should I contact today?"}).json()
     assert body["answer"] or body.get("rows") is not None
     assert body["engine"] in {"claude", "computed"}
+
+
+def test_all_four_screens_report_the_same_two_numbers(client):
+    """Overview, Opportunities, Action Center and Performance must reconcile.
+
+    The ambiguity this guards against is a real one the product shipped with:
+    two screens quoting a large number and two quoting a small one, with nothing
+    explaining the relationship. They now read one stamp decided in the pipeline.
+    """
+    overview = client.get("/api/overview").json()["today"]
+    feed = client.get("/api/opportunities").json()
+    actions = client.get("/api/actions").json()
+    perf = client.get("/api/performance").json()
+
+    detected = {overview["detected"], feed["detected"], actions["detected"],
+                perf["opportunities_detected"]}
+    assert len(detected) == 1, f"detected disagrees across screens: {detected}"
+
+    prioritized = {overview["prioritized_today"], feed["prioritized_today"],
+                   actions["todays_list"], perf["prioritized_today"]}
+    assert len(prioritized) == 1, f"today disagrees across screens: {prioritized}"
+
+    assert prioritized.pop() <= detected.pop(), "today is drawn from what was detected"
+
+
+def test_the_opportunities_feed_cannot_be_asked_for_a_different_today(client):
+    """A per-request limit once let a client redefine 'today' for one screen."""
+    a = client.get("/api/opportunities").json()
+    b = client.get("/api/opportunities?limit=3").json()
+    assert a["shown"] == b["shown"], "an unknown parameter must not resize today's list"
+
+    every = client.get("/api/opportunities?scope=detected").json()
+    assert every["shown"] == every["detected"]
+    assert every["prioritized_today"] == a["prioritized_today"]
+
+
+def test_deciding_on_an_action_does_not_change_the_detected_count(client):
+    """Workflow state and detection are different axes; moving one must not move the other."""
+    before = client.get("/api/actions").json()
+    row = next(r for r in before["rows"] if r["status"] == "New")
+
+    client.patch(f"/api/actions/{row['id']}", json={"status": "Approved"})
+    after = client.get("/api/actions").json()
+
+    assert after["detected"] == before["detected"]
+    assert after["counts"]["Approved"] == before["counts"]["Approved"] + 1
+    # Today's list is what RevenueOS prioritised, not what is left to do. If it
+    # shrank on every approval this screen would drift away from the Overview
+    # over the course of a morning; progress belongs in the status tiles.
+    assert after["todays_list"] == before["todays_list"]
+    assert after["awaiting_decision"] == before["awaiting_decision"] - 1

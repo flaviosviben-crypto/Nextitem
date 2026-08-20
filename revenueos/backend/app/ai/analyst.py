@@ -131,7 +131,7 @@ def _fallback_answer(question: str) -> dict[str, Any]:
     if any(k in q for k in ("contact", "contattare", "reach out", "call", "who should")):
         # Answer from the same engine the advisor sees, so the analyst and the
         # opportunity list can never give two different answers to one question.
-        rows = opp_engine.daily(workspace.opportunities)[:8]
+        rows = opp_engine.todays_list(workspace.opportunities)[:8]
         return rows_payload(
             "Customers to contact today",
             [{"name": o["customer_name"], "segment": o.get("segment"),
@@ -157,7 +157,7 @@ def _fallback_answer(question: str) -> dict[str, Any]:
             "Ranked opportunities",
             [{"customer": o["customer_name"], "reason": o["why_now"],
               "value": o.get("influenced_value"), "action": o["action"]}
-             for o in opp_engine.daily(workspace.opportunities)[:6]],
+             for o in opp_engine.todays_list(workspace.opportunities)[:6]],
             f"{len(workspace.opportunities)} opportunities detected, worth an estimated "
             f"€{summary.get('revenue_opportunity', 0):,.0f} if acted on.")
 
@@ -245,7 +245,7 @@ def executive_brief() -> dict[str, Any]:
             "headline": o["headline"], "why_now": o["why_now"],
             "influenced_value": o.get("influenced_value"),
             "action": o["action"], "priority": o["priority"],
-        } for o in opp_engine.daily(workspace.opportunities)[:6]],
+        } for o in opp_engine.todays_list(workspace.opportunities)[:6]],
         "data_health": {"score": (workspace.quality or {}).get("score"),
                         "summary": (workspace.quality or {}).get("summary")},
     }, ensure_ascii=False, default=str)

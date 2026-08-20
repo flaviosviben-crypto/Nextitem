@@ -99,7 +99,10 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
     return {
         "window_days": window_days,
         "as_of": as_of.isoformat(),
-        "opportunities_generated": len(recent),
+        # Detected is the universe the engine found; prioritised is what it
+        # recommended working. Conflating them was the ambiguity this fixes.
+        "opportunities_detected": len(recent),
+        "prioritized_today": sum(1 for r in recent if r.get("prioritized_today")),
         "customers_contacted": len(contacted_ids),
         "conversions": len(converted),
         "ignored": len(ignored),

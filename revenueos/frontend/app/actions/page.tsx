@@ -16,6 +16,7 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  FilterChip,
   Skeleton,
   Td,
   Th,
@@ -35,11 +36,17 @@ const STATE_COLOR: Record<string, string> = {
   Ignored: "var(--ink-3)",
 };
 
+/** "New" means nobody has decided yet — not that it is new, nor that it is due. */
+const STATUS_LABEL: Record<string, string> = { New: "Awaiting decision" };
+
 export default function ActionsPage() {
   const [status, setStatus] = useState("");
+  // Today's recommended workload, or the whole detected universe. Defaulting to
+  // today keeps this screen a queue rather than a backlog to feel guilty about.
+  const [scope, setScope] = useState<"today" | "all">("today");
   const { data, loading, error, refresh, setData } = useApi<ActionCenter>(
-    `/actions?status=${encodeURIComponent(status)}`,
-    [status],
+    `/actions?status=${encodeURIComponent(status)}&scope=${scope}`,
+    [status, scope],
   );
 
   const update = async (row: ActionRow, next: string) => {
@@ -64,6 +71,21 @@ export default function ActionsPage() {
         subtitle="Every opportunity an advisor decided on, and where it stands."
       />
 
+      {data && (
+        <div className="mb-5 flex flex-wrap items-center gap-1.5">
+          <FilterChip active={scope === "today"} onClick={() => setScope("today")}>
+            Today&apos;s list · {data.todays_list}
+          </FilterChip>
+          <FilterChip active={scope === "all"} onClick={() => setScope("all")}>
+            All detected · {data.detected}
+          </FilterChip>
+          <span className="ml-1 text-[12px] text-[var(--muted)]">
+            {data.awaiting_decision} of today&apos;s list still awaiting a decision ·{" "}
+            {data.detected_not_prioritized} detected but not prioritized for today
+          </span>
+        </div>
+      )}
+
       {loading && <Skeleton className="h-64 w-full rounded-xl" />}
       {error && <ErrorState message={error} onRetry={refresh} />}
 
@@ -80,7 +102,7 @@ export default function ActionsPage() {
                     : "card p-3 text-left transition-colors hover:border-[var(--line-strong)]"
                 }
               >
-                <div className="eyebrow">{s}</div>
+                <div className="eyebrow">{STATUS_LABEL[s] ?? s}</div>
                 <div className="num mt-1.5 text-[20px] font-semibold">{data.counts[s] ?? 0}</div>
               </button>
             ))}

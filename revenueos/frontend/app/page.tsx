@@ -81,6 +81,12 @@ export default function OverviewPage() {
               {today.opportunities === 1 ? "customer" : "customers"} worth a conversation
               {today.influenced_value > 0 && <> · {money(today.influenced_value)} if they convert</>}
             </p>
+            {/* The relationship, in one quiet line: the value is not the size of
+                the pile RevenueOS found, it is how little of it needs working. */}
+            <p className="mt-1 text-[12px] text-[var(--muted)]">
+              Prioritized from {num(today.detected)} detected{" "}
+              {today.detected === 1 ? "opportunity" : "opportunities"}
+            </p>
           </div>
           <Link href="/opportunities">
             <Button variant="primary">

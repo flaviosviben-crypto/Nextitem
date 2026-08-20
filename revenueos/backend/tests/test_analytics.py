@@ -277,15 +277,75 @@ def test_one_customer_gets_one_opportunity():
     assert len(ids) == len(set(ids))
 
 
-def test_the_daily_list_is_never_padded_to_a_quota():
+def test_todays_list_is_never_padded_to_a_quota():
     """A quiet day is a short list, not a list of weak suggestions."""
     profiles, products, txs = _opportunity_fixture()
     found = opportunities.detect(profiles, products, txs, TODAY)
-    shortlist = opportunities.daily(found, max_cards=20)
+    shortlist = opportunities.prioritize(found, max_cards=20)
     assert len(shortlist) <= 20
-    assert all(o["priority"] >= 55 for o in shortlist)
+    assert all(o["priority"] >= opportunities.PRIORITY_BAR for o in shortlist)
+    assert all(o["contactable"] for o in shortlist)
     # An empty engine yields an empty day, not filler.
-    assert opportunities.daily([], max_cards=20) == []
+    assert opportunities.prioritize([], max_cards=20) == []
+
+
+def test_detected_and_prioritized_are_different_numbers_with_one_definition():
+    """The product's central claim: a large universe, a small daily workload.
+
+    Detection and prioritisation must be separable and reconcilable, because
+    every screen quotes these two numbers and they have to agree.
+    """
+    profiles, products, txs = _opportunity_fixture()
+    detected = opportunities.detect(profiles, products, txs, TODAY)
+    today = opportunities.prioritize(detected, max_cards=5)
+    counts = opportunities.counts(detected)
+
+    assert counts["detected"] == len(detected)
+    assert counts["prioritized_today"] == len(today)
+    assert len(today) <= len(detected), "today's list is drawn from what was detected"
+
+    # The stamp is the single source of truth, and it partitions the universe.
+    stamped = [o for o in detected if o["prioritized_today"]]
+    assert stamped == today
+    assert opportunities.todays_list(detected) == today
+    assert all(o["prioritized_today"] is False
+               for o in detected if o not in today)
+
+
+def test_prioritisation_is_a_rule_not_a_display_limit():
+    """Both the bar and the cap are real, and the difference is named."""
+    profiles, products, txs = _opportunity_fixture()
+    detected = opportunities.detect(profiles, products, txs, TODAY)
+    opportunities.prioritize(detected, max_cards=3, bar=opportunities.PRIORITY_BAR)
+    counts = opportunities.counts(detected)
+
+    # Anything below the bar is excluded on merit; anything above it that did not
+    # fit is held back, and the two reasons are reported separately so a short
+    # list never gets confused with a filtered one.
+    assert counts["prioritized_today"] <= 3
+    eligible = [o for o in detected
+                if o["priority"] >= opportunities.PRIORITY_BAR and o["contactable"]]
+    assert counts["held_back"] == len(eligible) - counts["prioritized_today"]
+    assert counts["not_contactable"] == sum(1 for o in detected if not o["contactable"])
+
+
+def test_re_prioritising_never_leaves_a_stale_stamp():
+    """Yesterday's selection must not linger and inflate today's count."""
+    profiles, products, txs = _opportunity_fixture()
+    detected = opportunities.detect(profiles, products, txs, TODAY)
+    opportunities.prioritize(detected, max_cards=10)
+    assert opportunities.counts(detected)["prioritized_today"] <= 10
+
+    opportunities.prioritize(detected, max_cards=2)
+    assert opportunities.counts(detected)["prioritized_today"] <= 2
+    assert len(opportunities.todays_list(detected)) <= 2
+
+
+def test_an_empty_dataset_reports_zero_of_both():
+    counts = opportunities.counts([])
+    assert counts["detected"] == 0
+    assert counts["prioritized_today"] == 0
+    assert counts["held_back"] == 0
 
 
 def test_incremental_value_is_below_influenced_value():

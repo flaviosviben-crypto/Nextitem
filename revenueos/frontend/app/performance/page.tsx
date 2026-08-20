@@ -60,9 +60,9 @@ export default function PerformancePage() {
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat
-              label="Opportunities generated"
-              value={num(data.opportunities_generated)}
-              hint="Customers RevenueOS surfaced in this window"
+              label="Opportunities detected"
+              value={num(data.opportunities_detected)}
+              hint="Every customer that met the engine's criteria in this window"
             />
             <Stat
               label="Customers contacted"
@@ -120,7 +120,7 @@ export default function PerformancePage() {
             </p>
           </Card>
 
-          {data.opportunities_generated > 0 && (
+          {data.opportunities_detected > 0 && (
             <Card>
               <SectionTitle
                 title="From opportunity to sale"
@@ -128,7 +128,8 @@ export default function PerformancePage() {
               />
               <Funnel
                 stages={[
-                  { label: "Generated", value: data.opportunities_generated },
+                  { label: "Detected", value: data.opportunities_detected },
+                  { label: "Prioritized", value: data.prioritized_today },
                   { label: "Contacted", value: data.customers_contacted },
                   { label: "Converted", value: data.conversions },
                 ]}
@@ -136,6 +137,14 @@ export default function PerformancePage() {
               <p className="mt-4 text-[12px] text-[var(--ink-3)]">
                 {num(data.untouched)} not yet reviewed · {num(data.open)} in progress ·{" "}
                 {num(data.ignored)} set aside.
+              </p>
+              {/* Prioritisation is recomputed on each run rather than logged per
+                  day, so this stage is current state, not a total for the window.
+                  Saying so keeps the funnel from implying history it does not have. */}
+              <p className="mt-1.5 text-[12px] text-[var(--muted)]">
+                Detected, contacted and converted are counted across the window.
+                Prioritized is the current list — RevenueOS does not yet keep a
+                per-day record of what it recommended.
               </p>
             </Card>
           )}

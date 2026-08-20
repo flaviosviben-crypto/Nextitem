@@ -7,7 +7,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..analytics.opportunities import ACTION_STATES, CLOSED_STATES, OPEN_STATES, daily
+from ..analytics.opportunities import (
+    ACTION_STATES, CLOSED_STATES, OPEN_STATES, counts, todays_list,
+)
 from ..workspace import workspace
 
 router = APIRouter(tags=["opportunities"])
@@ -24,27 +26,32 @@ class ActionUpdate(BaseModel):
 
 @router.get("/opportunities")
 def todays_opportunities(trigger: str = "", include_suppressed: bool = False,
-                         limit: int = 20) -> dict[str, Any]:
-    """The advisor's list for today.
+                         scope: str = "today") -> dict[str, Any]:
+    """Today's recommended workload, drawn from everything detected.
 
-    Never padded to a quota: the response reports how many cleared the bar so the
-    UI can say "7 today" without implying something is missing.
+    ``scope`` reads a set that was already decided in the pipeline; it never
+    re-runs the prioritisation. A limit parameter used to live here, which meant
+    a client could ask this endpoint for a different "today" than the one the
+    Overview reported — two screens, two answers, same question.
     """
     everything = workspace.opportunities
-    shortlist = daily(everything, max_cards=limit)
+    today = todays_list(everything)
+    rows = everything if scope == "detected" else today
     if trigger:
-        shortlist = [o for o in shortlist if o["trigger"] == trigger]
+        rows = [o for o in rows if o["trigger"] == trigger]
 
     suppressed = [o for o in everything if not o["contactable"]]
 
     return {
-        "opportunities": shortlist,
-        "shown": len(shortlist),
-        "total_detected": len(everything),
+        "opportunities": rows,
+        "scope": scope,
+        "shown": len(rows),
+        # The relationship the whole product hangs on, in every response.
+        **counts(everything),
         "suppressed": suppressed[:50] if include_suppressed else [],
         "suppressed_count": len(suppressed),
-        "influenced_value": round(sum(o.get("influenced_value") or 0 for o in shortlist), 2),
-        "incremental_value": round(sum(o.get("incremental_value") or 0 for o in shortlist), 2),
+        "influenced_value": round(sum(o.get("influenced_value") or 0 for o in today), 2),
+        "incremental_value": round(sum(o.get("incremental_value") or 0 for o in today), 2),
         "triggers": sorted({o["trigger"] for o in everything}),
     }
 
@@ -58,23 +65,44 @@ def opportunity_detail(opportunity_id: str) -> dict[str, Any]:
 
 
 @router.get("/actions")
-def action_center(status: str = "") -> dict[str, Any]:
+def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
     """Everything an advisor has decided on, and everything still waiting."""
-    rows = workspace.pipeline
-    if status:
-        rows = [r for r in rows if r.get("status") == status]
+    # Scope first, then status. The status tiles count within the chosen scope,
+    # or the screen would show "Awaiting decision 102" directly beside a chip
+    # reading "Today's list · 20" and contradict itself.
+    scoped = ([r for r in workspace.pipeline if r.get("prioritized_today")]
+              if scope == "today" else workspace.pipeline)
+    rows = [r for r in scoped if r.get("status") == status] if status else scoped
 
-    counts = {s: sum(1 for r in workspace.pipeline if r.get("status") == s)
-              for s in PIPELINE_STATES}
-    converted = [r for r in workspace.pipeline if r.get("status") == "Converted"]
+    by_status = {s: sum(1 for r in scoped if r.get("status") == s)
+                 for s in PIPELINE_STATES}
+    converted = [r for r in scoped if r.get("status") == "Converted"]
+
+    # "New" spanning every detected opportunity implied hundreds of items were
+    # waiting on the advisor today. Split it: what RevenueOS recommends working
+    # now, and what it merely found and is holding.
+    #
+    # Today's list counts what was *prioritised*, whatever the advisor has since
+    # done with it. Counting only undecided rows would shrink the number each
+    # time someone approved one, so this screen would drift out of step with the
+    # Overview over the course of a morning. Progress through the list is what
+    # the status tiles are for.
+    on_todays_list = sum(1 for r in workspace.pipeline if r.get("prioritized_today"))
+    awaiting = sum(1 for r in workspace.pipeline
+                   if r.get("status") == "New" and r.get("prioritized_today"))
 
     return {
         "rows": rows[:400],
-        "counts": counts,
+        "counts": by_status,
+        "todays_list": on_todays_list,
+        "awaiting_decision": awaiting,
+        "detected_not_prioritized": len(workspace.pipeline) - on_todays_list,
+        "detected": len(workspace.pipeline),
         "total": len(rows),
         "statuses": PIPELINE_STATES,
-        "open": sum(1 for r in workspace.pipeline if r.get("status") in OPEN_STATES),
-        "closed": sum(1 for r in workspace.pipeline if r.get("status") in CLOSED_STATES),
+        "scope": scope,
+        "open": sum(1 for r in scoped if r.get("status") in OPEN_STATES),
+        "closed": sum(1 for r in scoped if r.get("status") in CLOSED_STATES),
         "converted_value": round(
             sum(r.get("realised_value") or r.get("influenced_value") or 0
                 for r in converted), 2),

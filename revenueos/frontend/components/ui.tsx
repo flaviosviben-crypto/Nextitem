@@ -177,6 +177,30 @@ export function Field({
 export const inputClass =
   "rounded-lg border border-[var(--line)] bg-[var(--raised)] px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]";
 
+/** A pill filter. Shared so the Opportunities and Action Center chips match. */
+export function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        active
+          ? "rounded-full border border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] px-3 py-1 text-[12px] font-medium text-[var(--ink)]"
+          : "rounded-full border border-[var(--line)] px-3 py-1 text-[12px] text-[var(--ink-2)] transition-colors hover:border-[var(--line-strong)]"
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 export function Skeleton({ className }: { className?: string }) {
   return <div className={clsx("skeleton", className)} />;
 }

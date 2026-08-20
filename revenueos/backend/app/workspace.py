@@ -217,13 +217,19 @@ class Workspace:
             products = inventory_analytics.build_product_stats(inventory, transactions)
             quality = validation.analyse(customers, transactions, inventory)
             opps = opp_engine.detect(profiles, products, transactions)
+            # Today's workload is decided once, here, and stamped onto every
+            # detected opportunity. Screens read that stamp; none of them gets to
+            # decide separately what "today" means.
+            today = opp_engine.prioritize(opps)
+            opp_counts = opp_engine.counts(opps)
 
             base = customer_scoring.summarize_base(profiles)
             inv = inventory_analytics.inventory_summary(products)
             actionable = [o for o in opps if o["contactable"]]
-            # The headline is what today's list is realistically worth — the sum of
-            # per-opportunity influenced value, not a best case across the base.
-            revenue_opportunity = sum(o.get("influenced_value") or 0 for o in actionable)
+            # The headline is what today's list is realistically worth — the sum
+            # of influenced value across the opportunities actually recommended,
+            # not across everything detected.
+            revenue_opportunity = sum(o.get("influenced_value") or 0 for o in today)
 
             self.profiles = profiles
             self.products = products
@@ -238,12 +244,14 @@ class Workspace:
                 "segments": segmentation.summarize(profiles),
                 "compliance": compliance.summarize(profiles),
                 "revenue_opportunity": round(revenue_opportunity, 2),
-                "opportunities": len(opps),
+                # One vocabulary, used everywhere: detected is the universe the
+                # engine found, prioritized is what it recommends working today.
+                "opportunities": opp_counts,
                 "actionable_opportunities": len(actionable),
                 "suppressed_opportunities": len(opps) - len(actionable),
                 "high_confidence_matches": sum(
                     1 for o in opps if ((o.get("product") or {}).get("match_pct") or 0) >= 75),
-                "customers_to_contact": len({o["customer_id"] for o in actionable}),
+                "customers_to_contact": len({o["customer_id"] for o in today}),
                 "data_health": quality.score,
                 "counts": {
                     "customers": len(profiles),

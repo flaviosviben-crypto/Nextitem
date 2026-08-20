@@ -383,17 +383,58 @@ def _action_text(trigger: dict[str, Any], eligibility: dict[str, Any],
     return f"{verb} {opener}."
 
 
-def daily(opportunities: list[dict[str, Any]], max_cards: int = 20,
-          bar: int = 55) -> list[dict[str, Any]]:
-    """The list an advisor works through today.
+# Today's list is a workload, not a feed. Both numbers are real rules applied in
+# the engine, not display truncation: an opportunity below the bar is not worth
+# interrupting anyone over, and nobody makes fifty personal calls in a morning.
+PRIORITY_BAR = 55
+DAILY_CAP = 20
 
-    A ceiling exists because nobody makes fifty personal calls in a morning. There
-    is no floor: if only seven opportunities clear the bar, the advisor sees seven
-    and can trust that the eighth genuinely was not worth their time.
+
+def prioritize(opportunities: list[dict[str, Any]], max_cards: int = DAILY_CAP,
+               bar: int = PRIORITY_BAR) -> list[dict[str, Any]]:
+    """Choose today's workload out of everything detected, and mark the choice.
+
+    Called once per pipeline run. Every detected opportunity is stamped with
+    ``prioritized_today``, so the decision travels with the object and each
+    screen reads the same answer instead of recomputing its own. Two screens
+    independently deciding what "today" means is how a product ends up quoting
+    two different sizes for the same day's work.
+
+    There is a ceiling but no floor: if only seven clear the bar the advisor sees
+    seven, and can trust that the eighth genuinely was not worth their time.
     """
-    strong = [o for o in opportunities if o["priority"] >= bar and o["contactable"]]
-    strong.sort(key=lambda o: -o["priority"])
-    return strong[:max_cards]
+    eligible = [o for o in opportunities if o["priority"] >= bar and o["contactable"]]
+    eligible.sort(key=lambda o: -o["priority"])
+    chosen = eligible[:max_cards]
+    chosen_ids = {id(o) for o in chosen}
+    for opp in opportunities:
+        opp["prioritized_today"] = id(opp) in chosen_ids
+    return chosen
+
+
+def todays_list(opportunities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Read back the prioritized set. A lookup, never a second decision."""
+    today = [o for o in opportunities if o.get("prioritized_today")]
+    today.sort(key=lambda o: -o["priority"])
+    return today
+
+
+def counts(opportunities: list[dict[str, Any]]) -> dict[str, Any]:
+    """The one place the detected/prioritized relationship is expressed."""
+    detected = len(opportunities)
+    today = sum(1 for o in opportunities if o.get("prioritized_today"))
+    eligible = sum(1 for o in opportunities
+                   if o["priority"] >= PRIORITY_BAR and o["contactable"])
+    return {
+        "detected": detected,
+        "prioritized_today": today,
+        # Cleared the bar but sat outside the day's capacity. Naming this keeps
+        # the cap honest: these were held back, not judged unworthy.
+        "held_back": max(0, eligible - today),
+        "not_contactable": sum(1 for o in opportunities if not o["contactable"]),
+        "daily_cap": DAILY_CAP,
+        "priority_bar": PRIORITY_BAR,
+    }
 
 
 # --------------------------------------------------------------- action log ---
@@ -416,6 +457,7 @@ def pipeline_defaults(opportunities: list[dict[str, Any]]) -> list[dict[str, Any
             "lifecycle": opp.get("lifecycle"),
             "trigger": opp["trigger"],
             "reason": opp["why_now"],
+            "prioritized_today": bool(opp.get("prioritized_today")),
             "product": (opp.get("product") or {}).get("name"),
             "product_sku": (opp.get("product") or {}).get("sku"),
             "match_pct": (opp.get("product") or {}).get("match_pct"),
