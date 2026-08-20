@@ -56,6 +56,14 @@ export default function PerformancePage() {
       {loading && <Skeleton className="h-64 w-full rounded-xl" />}
       {error && <ErrorState message={error} onRetry={refresh} />}
 
+      {loading && (
+        <div className="space-y-3">
+          {[0, 1].map((i) => (
+            <Skeleton key={i} className="h-32 w-full rounded-xl" />
+          ))}
+        </div>
+      )}
+
       {data && !loading && (
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

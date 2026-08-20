@@ -118,6 +118,26 @@ proxy reaches the API.
 
 Allow ~60s on the first run after idling — see cold starts below.
 
+### When a screen is blank
+
+Open **`/api/diag`** on the frontend:
+
+```
+https://revenueos-web.onrender.com/api/diag
+```
+
+It answers the three questions a blank page cannot distinguish between:
+
+| Field | What it tells you |
+|---|---|
+| `commit` | Which build is actually live. A stale build is indistinguishable from a broken one from the outside. |
+| `backend_origin` / `backend_resolved_from` | Where this service thinks the API is, and which variable said so. |
+| `api.reachable` / `api.status` / `api.took_ms` | Whether the API answered, and how long it took. A cold start shows `reachable: true` with `took_ms` around 60000. |
+| `api.loaded` | Whether the API has a dataset. `false` means it is up but empty. |
+
+The endpoint runs inside the frontend service, so it works even when the API is
+down — which is exactly when it is needed.
+
 ---
 
 ## Environment variables to maintain
