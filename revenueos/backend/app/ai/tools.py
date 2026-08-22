@@ -189,6 +189,10 @@ def recommend_products_for_customer(reference: str, limit: int = 5) -> str:
     p = _find_customer(reference)
     if not p:
         return _json({"error": f"No customer matches '{reference}'."})
+    if not workspace.product_matching_available:
+        return _json({"customer": p["name"], "matches": [],
+                      "note": ("Product matching is unavailable for this dataset — there is no "
+                               "transaction-side product or category history to match from.")})
     matches = matching.best_products_for_customer(p, workspace.products,
                                                   limit=max(1, min(limit, 10)))
     if not matches:
@@ -224,6 +228,11 @@ def find_customers_for_product(sku: str, limit: int = 10, contactable_only: bool
         if not hits:
             return _json({"error": f"No product matches '{sku}'."})
         product = hits[0]
+
+    if not workspace.product_matching_available:
+        return _json({"product": _slim_product(product), "matches": [],
+                      "note": ("Product matching is unavailable for this dataset — there is no "
+                               "transaction-side product or category history to match from.")})
 
     matches = matching.best_customers_for_product(
         product, workspace.profiles, limit=max(1, min(limit, 25)),

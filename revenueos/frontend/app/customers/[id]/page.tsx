@@ -31,6 +31,7 @@ import {
   lifecycleColor,
   matchColor,
   money,
+  noProductMessage,
   num,
   pct,
   seriesColor,
@@ -93,6 +94,21 @@ export default function CustomerDetailPage() {
         <h2 className="mt-2 text-[17px] font-semibold tracking-[-0.01em]">{why.headline}</h2>
         {why.why_now && (
           <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">{why.why_now}</p>
+        )}
+        {why.customer_evidence.length > 0 && (
+          <ul className="mt-2.5 space-y-1">
+            {why.customer_evidence.map((line) => (
+              <li key={line} className="text-[12.5px] leading-snug text-[var(--ink-3)]">
+                · {line}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!why.product && why.contactable && (
+          <p className="mt-3 text-[12.5px] text-[var(--ink-3)]">
+            {noProductMessage(detail.data.product_matching_available)}
+          </p>
         )}
 
         {why.product && (
@@ -304,7 +320,7 @@ function Recommendation({ match }: { match: Match }) {
         </div>
         <div className="flex items-center gap-2.5">
           <span className="num text-[13px]">{money(match.price)}</span>
-          <Badge color={matchColor(match.match_pct)}>{match.match_pct}%</Badge>
+          <Badge color={matchColor(match.match_pct)}>{match.match_pct}% match</Badge>
         </div>
       </div>
 

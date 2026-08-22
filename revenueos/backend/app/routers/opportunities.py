@@ -18,6 +18,31 @@ router = APIRouter(tags=["opportunities"])
 # "New" is the state an opportunity arrives in, before an advisor has decided.
 PIPELINE_STATES = ["New", *ACTION_STATES]
 
+# Only these trigger kinds ever write a product-match percentage into the
+# free-text "why now" reason. Kept narrow and explicit rather than
+# pattern-matching the string, so the scrub below cannot misfire on prose it
+# was never meant to touch.
+_MATCH_DEPENDENT_TRIGGERS = {"new_arrival", "restock_affinity"}
+
+
+def _scrub_unsupported_match(row: dict[str, Any]) -> dict[str, Any]:
+    """Strip a match claim the current dataset no longer supports.
+
+    An opportunity an advisor already acted on survives a recompute even after
+    the opportunity itself fades (``_merge_pipeline`` preserves decided rows) —
+    including one made back when the dataset still had transaction history.
+    The advisor's decision and the product name stay, as the honest record of
+    what happened; a precise match percentage this dataset can no longer
+    compute must not keep showing as if it were still current.
+    """
+    if row.get("match_pct") is None and row.get("trigger") not in _MATCH_DEPENDENT_TRIGGERS:
+        return row
+    out = {**row, "match_pct": None}
+    if row.get("trigger") in _MATCH_DEPENDENT_TRIGGERS:
+        out["reason"] = ("Product matching is no longer supported by the current "
+                         "dataset — this reason was generated before the data changed.")
+    return out
+
 
 class ActionUpdate(BaseModel):
     status: str
@@ -57,13 +82,37 @@ def todays_opportunities(trigger: str = "", include_suppressed: bool = False,
         "scope": scope,
         "shown": len(rows),
         # The relationship the whole product hangs on, in every response.
-        **counts(everything, workspace.pipeline),
+        **counts(everything, workspace.pipeline, daily_cap=workspace.daily_cap,
+                product_matching_available=workspace.product_matching_available),
         "suppressed": suppressed[:50] if include_suppressed else [],
         "suppressed_count": len(suppressed),
         "influenced_value": round(sum(o.get("influenced_value") or 0 for o in inbox), 2),
         "incremental_value": round(sum(o.get("incremental_value") or 0 for o in inbox), 2),
         "triggers": sorted({o["trigger"] for o in everything}),
+        # Same snapshot date as Overview, Action Center and Customers — never
+        # this request's wall-clock time.
+        "as_of": workspace.as_of.isoformat(),
     }
+
+
+class SettingsUpdate(BaseModel):
+    daily_cap: int | None = None
+
+
+@router.get("/opportunities/settings")
+def get_settings() -> dict[str, Any]:
+    """Today's workload size — a store's own capacity, not a law of the engine."""
+    return {"daily_cap": workspace.daily_cap}
+
+
+@router.patch("/opportunities/settings")
+def update_settings(payload: SettingsUpdate) -> dict[str, Any]:
+    if payload.daily_cap is not None:
+        if not (1 <= payload.daily_cap <= 200):
+            raise HTTPException(400, "daily_cap must be between 1 and 200.")
+        workspace.daily_cap = payload.daily_cap
+        workspace.recompute()
+    return {"daily_cap": workspace.daily_cap}
 
 
 @router.get("/opportunities/{opportunity_id:path}")
@@ -101,9 +150,14 @@ def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
     awaiting = sum(1 for r in workspace.pipeline
                    if r.get("status") == "New" and r.get("prioritized_today"))
 
+    served_rows = rows[:400]
+    if not workspace.product_matching_available:
+        served_rows = [_scrub_unsupported_match(r) for r in served_rows]
+
     return {
-        "rows": rows[:400],
+        "rows": served_rows,
         "counts": by_status,
+        "product_matching_available": workspace.product_matching_available,
         "todays_list": on_todays_list,
         "awaiting_decision": awaiting,
         "detected_not_prioritized": len(workspace.pipeline) - on_todays_list,
@@ -126,6 +180,8 @@ def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
         "converted_value_basis": (
             "Recorded sale value where the advisor entered one, otherwise the "
             "estimate that was on the card."),
+        # Same snapshot date as Overview, Opportunities and Customers.
+        "as_of": workspace.as_of.isoformat(),
     }
 
 

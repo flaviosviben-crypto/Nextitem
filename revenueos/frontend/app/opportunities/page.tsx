@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, ChevronUp, Info, ShieldOff } from "lucide-react";
 import { Page, PageHeader } from "@/components/Shell";
-import { OutreachPanel } from "@/components/OutreachPanel";
+import { OutreachPanel, OutreachPreview } from "@/components/OutreachPanel";
 import { NotNowButton, type Decline } from "@/components/DeclineReason";
 import {
   Badge,
@@ -34,9 +34,12 @@ import {
 import {
   EXPECTED_VALUE,
   EXPECTED_VALUE_HELP,
+  NO_MATCHING_HELP,
   lifecycleColor,
   matchColor,
   money,
+  noProductMessage,
+  pct,
   triggerLabel,
   valueColor,
 } from "@/lib/format";
@@ -149,13 +152,33 @@ export default function OpportunitiesPage() {
           data && data.influenced_value > 0 ? (
             <div className="text-right">
               <div className="num text-[20px] font-semibold">{money(data.influenced_value)}</div>
-              <div className="text-[12px] text-[var(--ink-2)]" title={EXPECTED_VALUE_HELP}>
+              <div
+                className="text-[12px] text-[var(--ink-2)]"
+                title={
+                  "Modelled value of today's prioritized opportunities — not earned revenue." +
+                  (data.product_matching_available
+                    ? ""
+                    : " Estimated using customer summary data; transaction history is unavailable.")
+                }
+              >
                 {EXPECTED_VALUE} of today&apos;s list
               </div>
             </div>
           ) : undefined
         }
       />
+
+      {data && !data.product_matching_available && (
+        <div className="mb-5 rounded-lg border border-[var(--line)] bg-[var(--raised)] px-3.5 py-2.5">
+          <p className="text-[13px] text-[var(--ink)]">
+            Product recommendations are unavailable because transaction history has not
+            been imported.
+          </p>
+          <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">
+            Customer prioritization still uses the available CRM summary data.
+          </p>
+        </div>
+      )}
 
       {triggers.length > 1 && (
         <div className="mb-5 flex flex-wrap gap-1.5">
@@ -244,6 +267,7 @@ export default function OpportunitiesPage() {
             key={opp.id}
             opp={opp}
             busy={pending.has(opp.id)}
+            productMatchingAvailable={data.product_matching_available}
             onAct={(status, decline) => act(opp, status, decline)}
           />
         ))}
@@ -264,13 +288,16 @@ export default function OpportunitiesPage() {
 function OpportunityCard({
   opp,
   busy,
+  productMatchingAvailable,
   onAct,
 }: {
   opp: Opportunity;
   busy?: boolean;
+  productMatchingAvailable: boolean;
   onAct: (status: string, decline?: Decline) => Promise<void>;
 }) {
   const [showWhy, setShowWhy] = useState(false);
+  const [showMessage, setShowMessage] = useState(false);
 
   return (
     <Card className={busy ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
@@ -318,6 +345,22 @@ function OpportunityCard({
         {showWhy ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         {showWhy ? "Hide the detail" : "Why this customer"}
       </button>
+
+      {/* ---- What to say, before there is a decision to make about it ---- */}
+      {opp.contactable && (
+        <button
+          onClick={() => setShowMessage((v) => !v)}
+          className="mt-2 flex items-center gap-1 text-[12px] text-[var(--ink-3)] transition-colors hover:text-[var(--ink-2)]"
+        >
+          {showMessage ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          {showMessage ? "Hide the message" : "Suggested message"}
+        </button>
+      )}
+      {showMessage && (
+        <div className="mt-2.5">
+          <OutreachPreview opportunityId={opp.id} />
+        </div>
+      )}
       </div>
 
       {/* ---- What, and why that ---- */}
@@ -325,8 +368,15 @@ function OpportunityCard({
         {opp.product ? (
           <ProductSuggestion product={opp.product} />
         ) : (
-          <p className="text-[12.5px] text-[var(--ink-3)]">
-            No piece matched well enough to recommend.
+          <p
+            className="text-[12.5px] text-[var(--ink-3)]"
+            title={!productMatchingAvailable ? NO_MATCHING_HELP : undefined}
+          >
+            {/* The full sentence already explains itself once, in the banner
+                above the list. Repeating it on every card in a 19-card scroll
+                is noise the shorter state avoids — the reason is one hover
+                away, not gone. */}
+            {productMatchingAvailable ? noProductMessage(true) : "No product recommendation"}
           </p>
         )}
       </div>
@@ -334,17 +384,34 @@ function OpportunityCard({
       <div className="min-w-0 xl:border-l xl:border-[var(--line)] xl:pl-7">
       {/* ---- What it is worth ---- */}
       {opp.influenced_value !== null && (
-        <div className="flex items-baseline gap-2" title={EXPECTED_VALUE_HELP}>
+        <button
+          onClick={() => setShowWhy(true)}
+          className="flex items-baseline gap-2 text-left"
+          title={
+            opp.basket_value !== null
+              ? `${money(opp.basket_value)} × ${pct(opp.probability, 1)} ≈ ${money(opp.influenced_value)}. ` +
+                (opp.value_confidence_basis ?? EXPECTED_VALUE_HELP)
+              : EXPECTED_VALUE_HELP
+          }
+        >
           <span className="text-[12px] text-[var(--ink-3)]">{EXPECTED_VALUE}</span>
           <span className="num text-[15px] font-semibold text-[var(--ink)]">
             {money(opp.influenced_value)}
           </span>
+          {/* High confidence stays quiet — it is the assumed case. Limited
+              cannot: a number this precise, built from summary data alone,
+              needs to say so without making the advisor click to find out. */}
+          {opp.value_confidence === "Limited" && (
+            <span className="text-[10.5px] font-medium uppercase tracking-wide text-[var(--warning)]">
+              Limited
+            </span>
+          )}
           {/* The caveat lives in the tooltip, not on the card. Repeating
               "modelled, not a forecast" beside every figure made the number
               read as a disclaimer rather than a number. */}
           <Info size={12} className="text-[var(--muted)]" aria-hidden />
           <span className="sr-only">{EXPECTED_VALUE_HELP}</span>
-        </div>
+        </button>
       )}
 
       {/* ---- How to act ---- */}
@@ -352,7 +419,7 @@ function OpportunityCard({
         <p className="text-[13.5px] font-medium text-[var(--ink)]">{opp.action}</p>
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" size="sm" disabled={busy} onClick={() => onAct("Approved")}>
-            Approve
+            Ready to contact
           </Button>
           <Button size="sm" disabled={busy} onClick={() => onAct("Scheduled")}>
             Schedule
@@ -366,13 +433,35 @@ function OpportunityCard({
 
 
       {showWhy && (
-        <div className="mt-3 space-y-2.5 rounded-lg bg-[var(--raised)] p-4 text-[12px] leading-relaxed text-[var(--ink-2)]">
-          {opp.evidence && <p>{opp.evidence}</p>}
-          <p>
-            <span className="text-[var(--ink-3)]">How the expected value is built: </span>
-            {opp.value_basis.charAt(0).toLowerCase() + opp.value_basis.slice(1)}.
-          </p>
-          <p className="text-[var(--ink-3)]">{opp.probability_basis}.</p>
+        <div className="mt-3 space-y-3 rounded-lg bg-[var(--raised)] p-4 text-[12px] leading-relaxed text-[var(--ink-2)]">
+          {opp.customer_evidence.length > 0 && (
+            <ul className="space-y-1">
+              {opp.customer_evidence.map((line) => (
+                <li key={line}>· {line}</li>
+              ))}
+            </ul>
+          )}
+          {opp.influenced_value !== null && opp.basket_value !== null && (
+            <div className="border-t border-[var(--line)] pt-2.5">
+              {/* 1 decimal place is the stored probability exactly (rounded to
+                  three decimals internally, so a tenth of a percent loses
+                  nothing) — "≈" because the money figures are then rounded to
+                  the nearest euro for display. €986 × 35% = €345, not €340;
+                  showing the real 34.5% is what makes the formula reconcile. */}
+              <p className="num text-[var(--ink)]">
+                {money(opp.basket_value)} × {pct(opp.probability, 1)} ≈ {money(opp.influenced_value)}
+              </p>
+              <p className="mt-0.5 text-[var(--ink-3)]">
+                {opp.value_basis} {opp.probability_basis}.
+              </p>
+              {opp.value_confidence && (
+                <p className="mt-1">
+                  <span className="text-[var(--ink-3)]">Confidence: </span>
+                  {opp.value_confidence} — {opp.value_confidence_basis}
+                </p>
+              )}
+            </div>
+          )}
           {opp.eligibility.channels.length > 0 && (
             <p>
               <span className="text-[var(--ink-3)]">Permitted channels: </span>

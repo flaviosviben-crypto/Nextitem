@@ -16,11 +16,14 @@ import {
   inputClass,
 } from "@/components/ui";
 import { CustomerRow, useApi } from "@/lib/api";
-import { days, lifecycleColor, matchColor, money, num, pct, shortDate, valueColor } from "@/lib/format";
+import { days, lifecycleColor, matchColor, money, noProductMessage, num, pct, shortDate, valueColor } from "@/lib/format";
 
 type Listing = {
   total: number;
   customers: CustomerRow[];
+  cycle_progress_available: boolean;
+  product_matching_available: boolean;
+  as_of: string;
   facets: { value_tiers: string[]; lifecycles: string[]; stores: string[] };
 };
 
@@ -31,7 +34,9 @@ export default function CustomersPage() {
   const [valueTier, setValueTier] = useState("");
   const [lifecycle, setLifecycle] = useState("");
   const [store, setStore] = useState("");
-  const [sort, setSort] = useState<string>("customer_score");
+  // Lifetime spend by default — a number every buyer reads the same way
+  // without a tooltip, unlike a blended internal score.
+  const [sort, setSort] = useState<string>("total_spend");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [contactableOnly, setContactableOnly] = useState(false);
 
@@ -142,14 +147,15 @@ export default function CustomersPage() {
               <thead>
                 <tr>
                   <Th>Customer</Th>
-                  <Th>Value</Th>
+                  <Th>Segment</Th>
                   <Th>Cycle stage</Th>
-                  <SortableTh label="Value" active={sort === "total_spend"} direction={direction} onClick={() => toggleSort("total_spend")} />
+                  <SortableTh label="Lifetime spend" active={sort === "total_spend"} direction={direction} onClick={() => toggleSort("total_spend")} />
                   <Th align="right">Orders</Th>
                   <Th>Last purchase</Th>
-                  <SortableTh label="Through cycle" active={sort === "cycle_position"} direction={direction} onClick={() => toggleSort("cycle_position")} />
-                  <Th>Recommended next</Th>
-                  <SortableTh label="Score" active={sort === "customer_score"} direction={direction} onClick={() => toggleSort("customer_score")} />
+                  {listing.data.cycle_progress_available && (
+                    <SortableTh label="Cycle progress" active={sort === "cycle_position"} direction={direction} onClick={() => toggleSort("cycle_position")} />
+                  )}
+                  {listing.data.product_matching_available && <Th>Recommended next</Th>}
                 </tr>
               </thead>
               <tbody>
@@ -190,42 +196,43 @@ export default function CustomersPage() {
                         <span className="ml-2 text-[11px] text-[var(--ink-3)]">{days(c.recency_days)}</span>
                       )}
                     </Td>
-                    <Td align="right">
-                      {c.cycle_position != null ? (
-                        <span
-                          style={{ color: lifecycleColor(c.lifecycle) }}
-                          title={
-                            c.cycle_days
-                              ? `${c.recency_days} days since last purchase, against a ${Math.round(c.cycle_days)}-day cycle (${c.cycle_confidence} confidence)`
-                              : undefined
-                          }
-                        >
-                          {pct(Math.min(c.cycle_position, 3))}
-                        </span>
-                      ) : (
-                        <Value hint="Not enough purchase history to estimate a cycle">{null}</Value>
-                      )}
-                    </Td>
-                    <Td>
-                      {c.recommended_product ? (
-                        <span className="flex items-center gap-2">
+                    {listing.data?.cycle_progress_available && (
+                      <Td align="right">
+                        {c.cycle_position != null ? (
                           <span
-                            className="num text-[12px] font-semibold"
-                            style={{ color: matchColor(c.recommended_product.match_pct) }}
+                            style={{ color: lifecycleColor(c.lifecycle) }}
+                            title={
+                              c.cycle_days
+                                ? `${c.recency_days} days since last purchase, against a ${Math.round(c.cycle_days)}-day cycle (${c.cycle_confidence} confidence)`
+                                : undefined
+                            }
                           >
-                            {c.recommended_product.match_pct}%
+                            {pct(Math.min(c.cycle_position, 3))}
                           </span>
-                          <span className="truncate text-[12.5px] text-[var(--ink-2)]">
-                            {c.recommended_product.name}
+                        ) : (
+                          <Value hint="Not enough purchase history to estimate a cycle">{null}</Value>
+                        )}
+                      </Td>
+                    )}
+                    {listing.data?.product_matching_available && (
+                      <Td>
+                        {c.recommended_product ? (
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="num text-[12px] font-semibold"
+                              style={{ color: matchColor(c.recommended_product.match_pct) }}
+                            >
+                              {c.recommended_product.match_pct}% match
+                            </span>
+                            <span className="truncate text-[12.5px] text-[var(--ink-2)]">
+                              {c.recommended_product.name}
+                            </span>
                           </span>
-                        </span>
-                      ) : (
-                        <Value hint="No product clears the confidence threshold">{null}</Value>
-                      )}
-                    </Td>
-                    <Td align="right">
-                      <Value>{c.customer_score}</Value>
-                    </Td>
+                        ) : (
+                          <Value hint={noProductMessage(true)}>{null}</Value>
+                        )}
+                      </Td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -242,16 +249,19 @@ function SortableTh({
   active,
   direction,
   onClick,
+  title,
 }: {
   label: string;
   active: boolean;
   direction: "asc" | "desc";
   onClick: () => void;
+  title?: string;
 }) {
   return (
     <Th align="right">
       <button
         onClick={onClick}
+        title={title}
         className="inline-flex items-center gap-1 uppercase tracking-[0.05em] hover:text-[var(--ink)]"
       >
         {label}

@@ -86,7 +86,7 @@ export default function PerformancePage() {
             <Stat
               label="Recommended customers contacted"
               value={`${num(data.customers_contacted)} / ${num(data.prioritized_today)}`}
-              hint="Observed. How much of what RevenueOS recommended an advisor actually worked."
+              hint="Observed. Share of recommended customers advisors actually contacted."
             />
             <Stat
               label="Measured conversion rate"
@@ -112,18 +112,19 @@ export default function PerformancePage() {
                     <span className="num font-semibold" title={EXPECTED_VALUE_HELP}>
                       {money(data.prioritized_expected_value)}
                     </span>{" "}
-                    in {EXPECTED_VALUE.toLowerCase()} across today&apos;s{" "}
+                    in {EXPECTED_VALUE.toLowerCase()} across{" "}
                     {num(data.prioritized_today)}{" "}
-                    {data.prioritized_today === 1 ? "recommendation" : "recommendations"}, drawn
-                    from {num(data.opportunities_detected)} detected{" "}
+                    {data.prioritized_today === 1 ? "recommendation" : "recommendations"} during
+                    the selected {window}-day period, drawn from{" "}
+                    {num(data.opportunities_detected)} detected{" "}
                     {data.opportunities_detected === 1 ? "opportunity" : "opportunities"}.
                   </>
                 ) : (
                   <>
                     RevenueOS has {num(data.opportunities_detected)} detected{" "}
-                    {data.opportunities_detected === 1 ? "opportunity" : "opportunities"}, of
-                    which {num(data.prioritized_today)}{" "}
-                    {data.prioritized_today === 1 ? "is" : "are"} recommended for today.
+                    {data.opportunities_detected === 1 ? "opportunity" : "opportunities"} in the
+                    selected {window}-day period, of which {num(data.prioritized_today)}{" "}
+                    {data.prioritized_today === 1 ? "is" : "are"} recommended.
                   </>
                 )}
               </p>
@@ -186,7 +187,7 @@ export default function PerformancePage() {
               <Funnel
                 stages={[
                   { label: "Detected", value: data.opportunities_detected },
-                  { label: "Recommended today", value: data.prioritized_today },
+                  { label: "Recommended", value: data.prioritized_today },
                   // Recommended splits into decided and still-waiting; showing
                   // the decided half is what connects the inbox to this page.
                   {
@@ -202,13 +203,10 @@ export default function PerformancePage() {
                 progress · {num(data.ignored)} set aside ·{" "}
                 {num(data.detected_not_recommended)} detected but not recommended.
               </p>
-              {/* Prioritisation is recomputed on each run rather than logged per
-                  day, so this stage is current state, not a total for the window.
-                  Saying so keeps the funnel from implying history it does not have. */}
               <p className="mt-1.5 text-[12px] text-[var(--muted)]">
-                Detected, contacted and converted are counted across the window.
-                Recommended is the current list — RevenueOS does not yet keep a
-                per-day record of what it recommended.
+                Every stage is counted from when each opportunity was first
+                recommended, so this funnel reflects the selected window, not
+                today's current list.
               </p>
             </Card>
           )}
@@ -227,7 +225,7 @@ export default function PerformancePage() {
                   <thead>
                     <tr>
                       <Th>Reason</Th>
-                      <Th align="right">Generated</Th>
+                      <Th align="right">Recommended</Th>
                       <Th align="right">Contacted</Th>
                       <Th align="right">Converted</Th>
                       <Th align="right">Rate</Th>
@@ -237,7 +235,7 @@ export default function PerformancePage() {
                     {data.by_trigger.map((row) => (
                       <tr key={row.trigger} className="border-t border-[var(--line)]">
                         <Td>{triggerLabel(row.trigger)}</Td>
-                        <Td align="right">{num(row.generated)}</Td>
+                        <Td align="right">{num(row.recommended)}</Td>
                         <Td align="right">{num(row.contacted)}</Td>
                         <Td align="right">{num(row.converted)}</Td>
                         <Td align="right">

@@ -134,10 +134,10 @@ export function triggerLabel(trigger: string): string {
   return (
     {
       due: "Due to buy",
-      at_risk: "Drifting",
+      at_risk: "Starting to drift",
       win_back: "Win-back",
       new_arrival: "New arrival",
-      cross_sell: "Widen categories",
+      cross_sell: "Category expansion",
       restock_affinity: "Move slow stock",
     }[trigger] || trigger
   );
@@ -209,3 +209,19 @@ export const EXPECTED_VALUE = "Expected value";
 export const EXPECTED_VALUE_HELP =
   "Each recommendation's estimated purchase value × its modelled conversion " +
   "probability. Modelled from retail benchmarks, not measured here.";
+
+/**
+ * Two different reasons a card can have no product, and they must never read
+ * the same: one says the engine looked and found nothing good enough, the
+ * other says it could not look at all.
+ */
+export function noProductMessage(matchingAvailable: boolean): string {
+  return matchingAvailable
+    ? "No piece matched well enough to recommend."
+    : "Product recommendation unavailable — transaction history is insufficient.";
+}
+
+export const NO_MATCHING_HELP =
+  "RevenueOS needs customer purchase history — SKU or category data on " +
+  "transaction lines — to match individual products reliably. Import a " +
+  "transactions file to unlock it.";

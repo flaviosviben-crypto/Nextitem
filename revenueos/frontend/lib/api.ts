@@ -85,7 +85,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(detail, res.status);
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const json = await res.json();
+  // Every screen that reasons about "today" — Overview, Opportunities, Action
+  // Center, Customers — reads the same dataset snapshot date from its own
+  // response body. Capturing whichever one a page happens to fetch first lets
+  // the shell show it once, consistently, without a dedicated request.
+  if (json && typeof json === "object" && typeof (json as { as_of?: unknown }).as_of === "string") {
+    setAsOf((json as { as_of: string }).as_of);
+  }
+  return json as T;
 }
 
 export const api = {
@@ -120,6 +128,27 @@ export function subscribeApiSlow(fn: () => void): () => void {
 
 export function apiIsSlow(): boolean {
   return slowRequests > 0;
+}
+
+// A tiny store of "what date is RevenueOS reasoning against right now", set
+// from whichever response happens to carry it first. See the shell for where
+// it is shown.
+let lastAsOf: string | null = null;
+const asOfListeners = new Set<() => void>();
+
+function setAsOf(value: string) {
+  if (value === lastAsOf) return;
+  lastAsOf = value;
+  asOfListeners.forEach((fn) => fn());
+}
+
+export function subscribeAsOf(fn: () => void): () => void {
+  asOfListeners.add(fn);
+  return () => asOfListeners.delete(fn);
+}
+
+export function getAsOf(): string | null {
+  return lastAsOf;
 }
 
 /** Fetch-on-mount with loading/error state and a manual refresh. */
@@ -230,6 +259,9 @@ export type OpportunityCounts = {
   not_contactable: number;
   daily_cap: number;
   priority_bar: number;
+  /** False when the dataset itself cannot support product-level matching —
+   *  distinct from a customer simply having no candidate above threshold. */
+  product_matching_available: boolean;
 };
 
 /** A ready-to-use draft for one recommendation on one channel. */
@@ -239,6 +271,9 @@ export type OutreachDraft = {
   channel: string;
   subject: string | null;
   body: string | null;
+  /** A natural opening for the advisor to have in mind before a call — the
+   *  "Suggested call brief". Null for written channels; use `body` there. */
+  brief: string | null;
   talking_points: string[];
   opportunity_id: string;
   customer_id: string;
@@ -273,6 +308,9 @@ export type Opportunity = {
   headline: string;
   why_now: string;
   evidence: string | null;
+  /** 3-5 concrete facts behind the card, honestly scoped to what this
+   *  customer's data actually supports. */
+  customer_evidence: string[];
   product: ProductCard | null;
   alternatives: ProductCard[];
   action: string;
@@ -281,9 +319,17 @@ export type Opportunity = {
   basket_value: number | null;
   influenced_value: number | null;
   incremental_value: number | null;
+  /** What basket_value actually is — traced from the same inputs the
+   *  backend used, e.g. "Average of ... and the recommended piece's price." */
   value_basis: string;
+  /** Machine-readable version of value_basis: blended | customer_history |
+   *  crm_summary | product_price | null. */
+  basket_source: string | null;
   probability: number;
   probability_basis: string;
+  /** How much to trust the expected-value inputs — High/Medium/Limited. */
+  value_confidence: string | null;
+  value_confidence_basis: string | null;
   priority: number;
   data_confidence: string | null;
   cycle_confidence: string | null;
@@ -298,6 +344,9 @@ export type OpportunityFeed = OpportunityCounts & {
   influenced_value: number;
   incremental_value: number;
   triggers: string[];
+  /** The dataset snapshot date every relative date and lifecycle calculation
+   *  here is computed against — never this request's wall-clock time. */
+  as_of: string;
 };
 
 export type ActionRow = {
@@ -341,6 +390,7 @@ export const DECLINE_REASONS: { code: string; label: string }[] = [
 export type ActionCenter = {
   rows: ActionRow[];
   counts: Record<string, number>;
+  product_matching_available: boolean;
   /** Set-aside counts by reason code, for later analysis. */
   decline_reasons: Record<string, number>;
   decline_reason_labels: Record<string, string>;
@@ -354,10 +404,13 @@ export type ActionCenter = {
   closed: number;
   converted_value: number;
   converted_value_basis: string;
+  as_of: string;
 };
 
 export type Overview = {
   loaded: boolean;
+  /** Absent only when no data is loaded yet. */
+  as_of?: string;
   today?: OpportunityCounts & {
     opportunities: number;
     note: string;
@@ -430,7 +483,7 @@ export type Performance = {
   attribution_note: string;
   by_trigger: {
     trigger: string;
-    generated: number;
+    recommended: number;
     contacted: number;
     converted: number;
     conversion_rate: number | null;
@@ -485,10 +538,12 @@ export type Match = {
 
 export type CustomerDetail = {
   profile: Record<string, any>;
+  product_matching_available: boolean;
   why_contact: {
     headline: string;
     why_now: string | null;
     evidence: string | null;
+    customer_evidence: string[];
     action: string;
     product: ProductCard | null;
     contactable: boolean;

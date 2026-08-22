@@ -11,6 +11,8 @@ from collections import defaultdict
 from datetime import date
 from typing import Any
 
+from . import reference_date
+
 CLASSES = ["Hot", "Healthy", "Slow Moving", "At Risk", "Dead Stock", "Unknown"]
 
 
@@ -23,9 +25,7 @@ def build_product_stats(
     if as_of is None:
         # Stock can arrive after the last recorded sale, so the reference date is
         # the latest thing we know about — otherwise ageing goes negative.
-        known = [t["date"] for t in transactions if t.get("date")]
-        known += [p["arrival_date"] for p in inventory if p.get("arrival_date")]
-        as_of = max(known) if known else date.today()
+        as_of = reference_date.resolve_as_of(transactions, inventory=inventory)
 
     sales_by_sku: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for t in transactions:

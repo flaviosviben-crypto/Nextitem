@@ -15,7 +15,8 @@ import {
   Target,
   Users,
 } from "lucide-react";
-import { api, apiIsSlow, subscribeApiSlow } from "@/lib/api";
+import { api, apiIsSlow, getAsOf, subscribeApiSlow, subscribeAsOf } from "@/lib/api";
+import { shortDate } from "@/lib/format";
 import { Badge } from "./ui";
 
 // Six destinations, in the order the work actually happens: see the day, work
@@ -77,7 +78,7 @@ export function Shell({ children }: { children: ReactNode }) {
               RevenueOS
             </span>
             <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--ink-3)]">
-              Revenue Intelligence
+              Clienteling Intelligence
             </span>
           </span>
         </Link>
@@ -116,6 +117,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="mt-4 border-t border-[var(--line)] pt-3">
+          <DataAsOf />
           <button
             onClick={toggleTheme}
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-[var(--ink-2)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--ink)]"
@@ -303,6 +305,26 @@ export function PageHeader({
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>
+  );
+}
+
+/**
+ * The one date every screen's relative dates and lifecycle calculations are
+ * computed against — visible so "1 day ago" reads correctly against the
+ * calendar date it is relative to, rather than against whatever "today" the
+ * advisor's own clock shows. RevenueOS uses the newest date the dataset
+ * itself contains, not the wall clock, so the two can genuinely differ.
+ */
+function DataAsOf() {
+  const asOf = useSyncExternalStore(subscribeAsOf, getAsOf, () => null);
+  if (!asOf) return null;
+  return (
+    <p
+      className="mb-2 px-2.5 text-[11px] text-[var(--ink-3)]"
+      title="RevenueOS computes recency and lifecycle timing against the newest date in the imported data, not today's calendar date."
+    >
+      Data as of {shortDate(asOf)}
+    </p>
   );
 }
 

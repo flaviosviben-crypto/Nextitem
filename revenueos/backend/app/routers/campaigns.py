@@ -112,9 +112,10 @@ def _audience_for(template: str, limit: int, contactable_only: bool):
     candidate_products = products or workspace.products
     audience = []
     for p in pool[:limit * 3]:
-        best = matching.best_products_for_customer(
+        best = (matching.best_products_for_customer(
             p, candidate_products, limit=1,
             min_score=0.45 if template in {"new_collection", "slow_movers"} else 0.3)
+            if workspace.product_matching_available else [])
         if template in {"new_collection", "slow_movers"} and not best:
             continue
         audience.append({

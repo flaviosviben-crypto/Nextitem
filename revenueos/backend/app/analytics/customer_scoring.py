@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Iterable
 
-from . import taxonomy
+from . import reference_date, taxonomy
 
 # Affinity below this share of spend is noise, not a preference.
 _MIN_AFFINITY_SHARE = 0.12
@@ -84,10 +84,7 @@ def build_profiles(
         tx_by_customer[t["customer_id"]].append(t)
 
     if as_of is None:
-        tx_dates = [t["date"] for t in transactions if t.get("date")]
-        cust_dates = [c["last_purchase_date"] for c in customers if c.get("last_purchase_date")]
-        all_dates = tx_dates + cust_dates
-        as_of = max(all_dates) if all_dates else date.today()
+        as_of = reference_date.resolve_as_of(transactions, customers)
 
     base = {c["customer_id"]: c for c in customers}
     for cid in tx_by_customer:

@@ -22,6 +22,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from . import reference_date
 from .opportunities import CLOSED_STATES, INCREMENTALITY, OPEN_STATES
 
 # A purchase this long after a contact is plausibly connected to it. Beyond the
@@ -47,7 +48,7 @@ def _as_date(value: Any) -> date | None:
 def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
            as_of: date | None = None, window_days: int = 30) -> dict[str, Any]:
     """Performance over the trailing window, from advisor actions and real sales."""
-    as_of = as_of or date.today()
+    as_of = as_of or reference_date.resolve_as_of(transactions)
     since = as_of - timedelta(days=window_days)
 
     recent = [r for r in pipeline if (_as_date(r.get("created_at")) or as_of) >= since]
@@ -103,7 +104,9 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
         # Detected is the universe the engine found; prioritised is what it
         # recommended working. Conflating them was the ambiguity this fixes.
         "opportunities_detected": len(recent),
-        "prioritized_today": sum(1 for r in recent if r.get("prioritized_today")),
+        # A historical fact — was this ever prioritized — not "is it in today's
+        # live list right now".
+        "prioritized_today": sum(1 for r in recent if _was_prioritized(r)),
         "customers_contacted": len(contacted_ids),
         "conversions": len(converted),
         "ignored": len(ignored),
@@ -116,17 +119,18 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
         "untouched": sum(1 for r in recent if r.get("status") not in decided),
         "awaiting_decision": sum(1 for r in recent
                                  if r.get("status") not in decided
-                                 and r.get("prioritized_today")),
+                                 and _was_prioritized(r)),
         "detected_not_recommended": sum(1 for r in recent
                                         if r.get("status") not in decided
-                                        and not r.get("prioritized_today")),
+                                        and not _was_prioritized(r)),
         "conversion_rate": round(conversion_rate, 3) if conversion_rate is not None else None,
         # The same sum Today's Opportunities and the Overview show, so a
         # workspace with nothing measured yet can still say what is on the table.
-        # No new estimate: it adds up values already on the rows.
+        # No new estimate: it adds up the value each row had when it was
+        # generated, so a later recompute cannot quietly rewrite the total.
         "prioritized_expected_value": round(
-            sum(float(r.get("influenced_value") or 0)
-                for r in recent if r.get("prioritized_today")), 2),
+            sum(float(r.get("influenced_value_generated") or r.get("influenced_value") or 0)
+                for r in recent if _was_prioritized(r)), 2),
 
         "contacted_revenue": round(contacted_revenue, 2),
         "contacted_revenue_basis": (
@@ -159,6 +163,16 @@ def report(pipeline: list[dict[str, Any]], transactions: list[dict[str, Any]],
     }
 
 
+def _was_prioritized(row: dict[str, Any]) -> bool:
+    """Historical fact: did this ever make a day's prioritized list.
+
+    Prefers the frozen ``first_prioritized_at`` timestamp; falls back to the
+    live ``prioritized_today`` flag for rows recorded before that field
+    existed, so old reports do not lose these rows outright.
+    """
+    return bool(row.get("first_prioritized_at") or row.get("prioritized_today"))
+
+
 def _contact_dates(rows: list[dict[str, Any]]) -> dict[str, date]:
     """Earliest recorded contact per customer, so attribution starts there."""
     out: dict[str, date] = {}
@@ -173,12 +187,21 @@ def _contact_dates(rows: list[dict[str, Any]]) -> dict[str, date]:
 
 
 def _by_trigger(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Which reasons for contact are actually working."""
+    """Which reasons for contact are actually working.
+
+    Counted from ``recommended``, not every detected opportunity: a card an
+    advisor never saw could not have been contacted or converted, so counting
+    it here would understate how well a reason performs once it actually
+    reaches someone. Recommended -> contacted -> converted is one coherent
+    cohort, not three different populations sharing a table.
+    """
     buckets: dict[str, dict[str, int]] = {}
     for row in rows:
+        if not _was_prioritized(row):
+            continue
         kind = row.get("trigger") or "unknown"
-        b = buckets.setdefault(kind, {"generated": 0, "contacted": 0, "converted": 0})
-        b["generated"] += 1
+        b = buckets.setdefault(kind, {"recommended": 0, "contacted": 0, "converted": 0})
+        b["recommended"] += 1
         if row.get("status") in CONTACTED_STATES:
             b["contacted"] += 1
         if row.get("status") == "Converted":
@@ -191,5 +214,5 @@ def _by_trigger(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "trigger": kind, **b,
             "conversion_rate": round(rate, 3) if rate is not None else None,
         })
-    out.sort(key=lambda r: -r["generated"])
+    out.sort(key=lambda r: -r["recommended"])
     return out

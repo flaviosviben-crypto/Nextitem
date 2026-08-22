@@ -142,7 +142,7 @@ export default function OverviewPage() {
                     <span className="text-[12px] text-[var(--ink-3)]">{row.product}</span>
                   )}
                   {row.match_pct !== null && (
-                    <Badge color={matchColor(row.match_pct)}>{row.match_pct}%</Badge>
+                    <Badge color={matchColor(row.match_pct)}>{row.match_pct}% match</Badge>
                   )}
                 </div>
               </Link>

@@ -23,6 +23,7 @@ from .analytics import (
     inventory as inventory_analytics,
     opportunities as opp_engine,
     performance,
+    reference_date,
     segmentation,
 )
 from .data import cleaning, ingestion, mapping as mapping_mod, validation
@@ -82,6 +83,15 @@ class Workspace:
             # and a denim store do not share a definition of "overdue".
             self.lifecycle_thresholds: dict[str, float] = dict(
                 segmentation.LIFECYCLE_THRESHOLDS)
+            # How many opportunities a day's list holds. A setting, not a law:
+            # a two-advisor boutique and a ten-advisor flagship do not share a
+            # day's capacity.
+            self.daily_cap: int = opp_engine.DAILY_CAP
+            self.as_of: date = date.today()
+            # Whether the loaded dataset genuinely supports product-level
+            # matching — the same fact the Data page's "Product matching"
+            # capability reports. False until the first recompute.
+            self.product_matching_available: bool = False
             self.computed_at: str | None = None
 
     @property
@@ -209,19 +219,35 @@ class Workspace:
             transactions = self.transactions_raw
             inventory = self.inventory_raw
 
-            profiles = customer_scoring.build_profiles(customers, transactions)
+            # One "today" for the whole pipeline. Each stage used to derive its
+            # own reference date from whatever it happened to receive; computing
+            # it once here and threading it through means recency, cycle,
+            # eligibility and performance math can never quietly disagree about
+            # what day it is.
+            self.as_of = reference_date.resolve_as_of(transactions, customers, inventory)
+
+            profiles = customer_scoring.build_profiles(customers, transactions, as_of=self.as_of)
             # Value and lifecycle are resolved separately, then eligibility, so the
             # opportunity engine never has to guess at any of the three.
             profiles = segmentation.classify(profiles, self.lifecycle_thresholds)
-            profiles = compliance.apply(profiles)
-            products = inventory_analytics.build_product_stats(inventory, transactions)
+            profiles = compliance.apply(profiles, as_of=self.as_of)
+            products = inventory_analytics.build_product_stats(inventory, transactions, as_of=self.as_of)
             quality = validation.analyse(customers, transactions, inventory)
-            opps = opp_engine.detect(profiles, products, transactions)
+            # The one fact every product-matching surface defers to. Computed once
+            # from the exact same signal the Data page's "Product matching"
+            # capability reads, so the engine can never generate a match the Data
+            # page would call unsupported.
+            self.product_matching_available = next(
+                (c.available for c in quality.capabilities if c.name == "Product matching"),
+                False)
+            opps = opp_engine.detect(profiles, products, transactions, as_of=self.as_of,
+                                     product_matching_available=self.product_matching_available)
             # Today's workload is decided once, here, and stamped onto every
             # detected opportunity. Screens read that stamp; none of them gets to
             # decide separately what "today" means.
-            today = opp_engine.prioritize(opps)
-            opp_counts = opp_engine.counts(opps)
+            today = opp_engine.prioritize(opps, max_cards=self.daily_cap)
+            opp_counts = opp_engine.counts(opps, daily_cap=self.daily_cap,
+                                          product_matching_available=self.product_matching_available)
 
             base = customer_scoring.summarize_base(profiles)
             inv = inventory_analytics.inventory_summary(products)
@@ -236,7 +262,7 @@ class Workspace:
             self.opportunities = opps
             self.quality = quality.to_dict()
             self.pipeline = _merge_pipeline(self.pipeline, opp_engine.pipeline_defaults(opps))
-            self.performance = performance.report(self.pipeline, transactions)
+            self.performance = performance.report(self.pipeline, transactions, as_of=self.as_of)
             self.summary = {
                 "source": self.source,
                 "customers": base,
@@ -269,7 +295,7 @@ class Workspace:
         never lags behind what the advisor just did.
         """
         with self._lock:
-            self.performance = performance.report(self.pipeline, self.transactions_raw)
+            self.performance = performance.report(self.pipeline, self.transactions_raw, as_of=self.as_of)
 
     def audit(self, row_id: str, status: str, note: str | None = None,
               actor: str = "advisor") -> None:
@@ -307,6 +333,7 @@ class Workspace:
                 "imports": [i.__dict__ for i in self.imports],
                 "pipeline": self.pipeline,
                 "lifecycle_thresholds": self.lifecycle_thresholds,
+                "daily_cap": self.daily_cap,
                 "audit_log": self.audit_log,
             }
             SNAPSHOT.write_text(json.dumps(payload, default=_json_default))
@@ -341,6 +368,7 @@ class Workspace:
             self.pipeline = payload.get("pipeline", [])
             self.lifecycle_thresholds = {**segmentation.LIFECYCLE_THRESHOLDS,
                                          **payload.get("lifecycle_thresholds", {})}
+            self.daily_cap = payload.get("daily_cap") or opp_engine.DAILY_CAP
             self.audit_log = payload.get("audit_log", [])
             self.source = payload.get("source", "restored")
         if self.customers_raw or self.transactions_raw or self.inventory_raw:
@@ -366,7 +394,14 @@ _REQUIRED: dict[str, list[str]] = {
 
 
 def _merge_pipeline(existing: list[dict[str, Any]], fresh: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep advisor decisions when opportunities are recomputed."""
+    """Keep advisor decisions when opportunities are recomputed.
+
+    Also keeps the recommendation's own history stable: when an opportunity is
+    recomputed (every import, every demo reload), it must not look freshly
+    generated. ``created_at`` and the ``_generated`` snapshot fields are frozen
+    at first sight and carried forward untouched — otherwise Performance's
+    7/30/90-day windows would only ever see "just now".
+    """
     status_by_id = {row["id"]: row for row in existing}
     merged = []
     for row in fresh:
@@ -381,9 +416,18 @@ def _merge_pipeline(existing: list[dict[str, Any]], fresh: list[dict[str, Any]])
             # record every time the opportunities were rebuilt.
             for carried in ("decline_reason", "decline_reason_label", "decline_note",
                             "contact_channel", "contacted_at", "outreach_message",
-                            "realised_value"):
+                            "realised_value", "created_at", "segment_generated",
+                            "match_pct_generated", "influenced_value_generated",
+                            "incremental_value_generated"):
                 if carried in prior:
                     row[carried] = prior[carried]
+            # The first recompute where this opportunity made today's list, kept
+            # forever after — never overwritten by a later recompute where it
+            # may or may not still be prioritized.
+            if prior.get("first_prioritized_at"):
+                row["first_prioritized_at"] = prior["first_prioritized_at"]
+            elif row.get("prioritized_today"):
+                row["first_prioritized_at"] = datetime.utcnow().isoformat(timespec="seconds")
         merged.append(row)
     # Preserve rows the advisor has acted on even if the opportunity faded.
     fresh_ids = {r["id"] for r in fresh}

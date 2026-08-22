@@ -22,7 +22,7 @@ done
 mkdir -p .logs
 ( cd backend && setsid nohup .venv/bin/python -m uvicorn app.main:app --port 8000 \
     > ../.logs/api.log 2>&1 < /dev/null & )
-( cd frontend && setsid nohup npx next start -p 3000 \
+( cd frontend && setsid nohup npx next dev -p 3000 \
     > ../.logs/web.log 2>&1 < /dev/null & )
 
 # Wait for the API, then prove it is *this* build by asking for a route that

@@ -25,7 +25,7 @@ def list_customers(
     value_tier: str = "",
     lifecycle: str = "",
     store: str = "",
-    sort: str = "customer_score",
+    sort: str = "total_spend",
     direction: str = "desc",
     contactable_only: bool = False,
     limit: int = Query(50, le=500),
@@ -58,7 +58,10 @@ def list_customers(
     page = rows[offset:offset + limit]
     top_products = {}
     for p in page:
-        best = matching.best_products_for_customer(p, workspace.products, limit=1)
+        # Never a precise match on a dataset the Data page itself calls
+        # unsupported — the same fact governs every recommendation surface.
+        best = (matching.best_products_for_customer(p, workspace.products, limit=1)
+                if workspace.product_matching_available else [])
         top_products[p["customer_id"]] = ({
             "sku": best[0]["sku"], "name": best[0]["product_name"],
             "match_pct": best[0]["match_pct"], "price": best[0]["price"],
@@ -68,6 +71,14 @@ def list_customers(
         "total": len(rows),
         "offset": offset,
         "limit": limit,
+        # Checked against the whole base, not just this page, so the column
+        # does not appear and disappear as the advisor paginates or filters.
+        "cycle_progress_available": any(
+            p.get("cycle_position") is not None for p in workspace.profiles),
+        "product_matching_available": workspace.product_matching_available,
+        # The same snapshot date every other screen reasons from — never this
+        # request's wall-clock time.
+        "as_of": workspace.as_of.isoformat(),
         "customers": [{
             "customer_id": p["customer_id"], "name": p["name"],
             "value_tier": p.get("value_tier"), "lifecycle": p.get("lifecycle"),
@@ -103,18 +114,21 @@ def customer_detail(customer_id: str) -> dict[str, Any]:
     if not profile:
         raise HTTPException(404, "Customer not found.")
 
-    matches = matching.best_products_for_customer(profile, workspace.products, limit=6)
+    matches = (matching.best_products_for_customer(profile, workspace.products, limit=6)
+               if workspace.product_matching_available else [])
     transactions = workspace.customer_transactions(customer_id)
     opps = [o for o in workspace.opportunities if o["customer_id"] == customer_id]
 
     return {
         "profile": profile,
+        "product_matching_available": workspace.product_matching_available,
         # The answer, stated first and in the same words as the opportunity card,
         # so the advisor never has to reconcile two versions of the reason.
         "why_contact": ({
             "headline": opps[0]["headline"],
             "why_now": opps[0]["why_now"],
             "evidence": opps[0]["evidence"],
+            "customer_evidence": opps[0].get("customer_evidence", []),
             "action": opps[0]["action"],
             "product": opps[0].get("product"),
             "contactable": opps[0]["contactable"],
@@ -122,7 +136,13 @@ def customer_detail(customer_id: str) -> dict[str, Any]:
             "headline": "No reason to contact them today",
             "why_now": profile.get("lifecycle_basis"),
             "evidence": None,
-            "action": "Nothing to do — they are within their normal buying rhythm.",
+            "customer_evidence": [],
+            # Same distinction the lifecycle legend makes: a resolved cycle (own
+            # or cohort) earns "rhythm" language, a pure recency fallback does
+            # not claim a rhythm this dataset cannot show.
+            "action": ("Nothing to do — they are within their normal buying rhythm."
+                      if profile.get("cycle_source") not in (None, "none")
+                      else "Nothing to do — purchased within the recent activity window."),
             "product": None,
             "contactable": profile.get("contactable", False),
         }),

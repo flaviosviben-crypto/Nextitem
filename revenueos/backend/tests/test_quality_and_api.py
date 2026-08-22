@@ -299,6 +299,22 @@ def test_all_four_screens_report_the_same_two_numbers(client):
     assert prioritized.pop() <= detected.pop(), "today is drawn from what was detected"
 
 
+def test_every_screen_reasons_from_the_same_reference_date(client):
+    """Overview, Opportunities, Action Center and Customers must never mix
+    reference dates — one dataset snapshot date, read the same way everywhere,
+    is what makes a relative date like "1 day ago" reconcile with the absolute
+    date shown beside it.
+    """
+    overview_as_of = client.get("/api/overview").json()["as_of"]
+    feed_as_of = client.get("/api/opportunities").json()["as_of"]
+    actions_as_of = client.get("/api/actions").json()["as_of"]
+    customers_as_of = client.get("/api/customers").json()["as_of"]
+
+    assert {overview_as_of, feed_as_of, actions_as_of, customers_as_of} == {overview_as_of}
+    # It is the dataset's own latest known date, not this request's wall clock.
+    assert overview_as_of == workspace.as_of.isoformat()
+
+
 def test_the_opportunities_feed_cannot_be_asked_for_a_different_today(client):
     """A per-request limit once let a client redefine 'today' for one screen."""
     a = client.get("/api/opportunities").json()

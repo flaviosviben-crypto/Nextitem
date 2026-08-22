@@ -66,6 +66,21 @@ LIFECYCLE_META = {
              "meaning": "Substantially beyond their rhythm — needs genuine win-back."},
 }
 
+# Used instead of LIFECYCLE_META's "meaning" whenever a customer (or the whole
+# dataset) has no cycle to compare against at all — cycle_source "none", the
+# RECENCY_FALLBACK branch of classify_lifecycle. That branch compares recency
+# to fixed day windows, not to anything derived from a purchase pattern, so
+# saying "rhythm" or "cycle" here would claim a personalisation the data does
+# not support. A cohort-derived cycle (cycle_source "cohort"/"blended") still
+# uses the buying-rhythm wording above: it is an estimate of a cycle, not an
+# absence of one.
+LIFECYCLE_META_RECENCY_FALLBACK = {
+    "Active": "Purchased within the recent activity window.",
+    "Due": "Beyond the first recency threshold.",
+    "At Risk": "Well beyond the recent purchase window.",
+    "Lost": "Inactive beyond the long-term recency threshold.",
+}
+
 
 # ------------------------------------------------------------ buying cycle ---
 
@@ -324,6 +339,12 @@ def classify(profiles: list[dict[str, Any]],
         p["overdue_ratio"] = p.get("cycle_position")
         p["segment"] = f"{p['value_tier']} · {p['lifecycle']}"
         p["lifecycle_tone"] = LIFECYCLE_META[p["lifecycle"]]["tone"]
+        # Recency-fallback wording when there is no cycle — of any provenance
+        # — to compare against; buying-rhythm wording otherwise, including a
+        # cohort-estimated cycle, which is still an estimate of a rhythm.
+        p["lifecycle_meaning"] = (LIFECYCLE_META_RECENCY_FALLBACK[p["lifecycle"]]
+                                  if cycle["cycle_source"] == "none"
+                                  else LIFECYCLE_META[p["lifecycle"]]["meaning"])
     return profiles
 
 
@@ -342,13 +363,23 @@ def summarize(profiles: list[dict[str, Any]]) -> dict[str, Any]:
         matrix[f"{tier}|{stage}"] += 1
         value_amounts[tier] += p.get("total_spend") or 0
 
+    # A per-stage legend describes the whole workspace, not one customer, so it
+    # cannot mix wording the way a per-profile ``lifecycle_meaning`` can. If
+    # every customer here is on the recency fallback — no transaction history
+    # at all to estimate any cycle from, personal or cohort — the legend says
+    # so rather than describing a "buying rhythm" the dataset cannot show.
+    recency_fallback_only = bool(profiles) and all(
+        p.get("cycle_source") in (None, "none") for p in profiles)
+    lifecycle_meaning = (LIFECYCLE_META_RECENCY_FALLBACK if recency_fallback_only
+                         else {s: LIFECYCLE_META[s]["meaning"] for s in LIFECYCLE_STAGES})
+
     return {
         "value": [{"tier": t, "customers": by_value.get(t, 0),
                    "total_spend": round(value_amounts.get(t, 0), 2),
                    "meaning": VALUE_META[t]["meaning"]}
                   for t in VALUE_TIERS if by_value.get(t)],
         "lifecycle": [{"stage": s, "customers": by_lifecycle.get(s, 0),
-                       "meaning": LIFECYCLE_META[s]["meaning"]}
+                       "meaning": lifecycle_meaning[s]}
                       for s in LIFECYCLE_STAGES if by_lifecycle.get(s)],
         "matrix": [{"value_tier": t, "lifecycle": s, "customers": matrix[f"{t}|{s}"]}
                    for t in VALUE_TIERS for s in LIFECYCLE_STAGES if matrix.get(f"{t}|{s}")],

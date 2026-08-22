@@ -98,7 +98,7 @@ def _category_signal(cust: dict, prod: dict) -> Signal:
         reason = (f"{best_label} is {best_share:.0%} of their spend"
                   if best_share >= 0.15 else f"They have bought {best_label} before")
     else:
-        reason = f"{taxonomy.describe(prod_cat)} pairs naturally with their {best_label} buying"
+        reason = f"Complements the {best_label} they already buy"
     return Signal("category", "Category fit", True, min(1.0, best_score), reason)
 
 
@@ -172,7 +172,7 @@ def _size_signal(cust: dict, prod: dict) -> Signal:
     where = f" in {scope.lower()}" if scope else ""
     if key in known:
         return Signal("size", "Size availability", True, 1.0,
-                      f"Size {prod_size} is the size they buy{where}")
+                      f"Usually buys size {prod_size}{where}")
     if key == "ONE SIZE":
         return Signal("size", "Size availability", True, 0.85, "One size — fits regardless")
     return Signal("size", "Size availability", True, 0.12,

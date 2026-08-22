@@ -326,7 +326,7 @@ export function Funnel({
                 {num(stage.value)}
                 {rate !== null && (
                   <span className="ml-2 text-[11px] font-normal text-[var(--ink-3)]">
-                    {(rate * 100).toFixed(0)}% of previous
+                    {(rate * 100).toFixed(0)}% of {stages[i - 1].label.toLowerCase()}
                   </span>
                 )}
               </span>

@@ -146,6 +146,16 @@ def _sentences(opp: dict[str, Any], profile: dict[str, Any], channel: str) -> li
     trigger = opp.get("trigger") or ""
     name = first_name(opp.get("customer_name") or profile.get("name"))
 
+    if not (opp.get("product") or {}).get("name"):
+        # No product cleared the bar, or matching is unavailable for this
+        # dataset. A genuine check-in reads better than a sentence built
+        # around a piece that does not exist.
+        return [
+            f"{_greeting(name)} — I wanted to check in and see how you're doing.",
+            "We have some new arrivals in store and I'd be happy to show you "
+            "anything that might suit you.",
+        ]
+
     size, stock = _size_clause(opp, profile), _stock_clause(opp)
     # "We have it in your usual L" already says it is here. Keep the stock line
     # only when it adds something — that the last one is on the floor.
@@ -165,15 +175,46 @@ def _sentences(opp: dict[str, Any], profile: dict[str, Any], channel: str) -> li
 def _subject(opp: dict[str, Any]) -> str:
     product = opp.get("product") or {}
     name, brand = product.get("name"), product.get("brand")
-    return f"{name} — {brand}" if brand else str(name or "A piece I thought of you for")
+    if not name:
+        return "Checking in"
+    return f"{name} — {brand}" if brand else str(name)
+
+
+def _call_brief(opp: dict[str, Any], profile: dict[str, Any]) -> str:
+    """A natural opening for the advisor to have in mind — not a script to
+    read aloud, and never the internal reasoning the card is built from.
+
+    ``why_now``/``evidence`` explain the recommendation to the advisor on the
+    card itself; none of that vocabulary (recency, cycle, segment, score)
+    belongs in what they say or think about saying to the customer. This is
+    advice about the conversation, phrased the way a manager would say it to
+    the advisor in passing — "check in with Anna and mention X" — built from
+    the same clean, customer-safe facts the written channels use.
+    """
+    name = first_name(opp.get("customer_name") or profile.get("name")) or "the customer"
+    product = opp.get("product") or {}
+    if not product.get("name"):
+        return (f"Check in with {name} personally. Mention the new arrivals and offer "
+                f"to show them a few pieces that may suit them.")
+
+    piece = f"the {product['name']} from {product['brand']}" if product.get("brand") \
+        else f"the {product['name']}"
+    lead = f"Check in with {name} and mention {piece} — it just came in."
+
+    supporting = [c for c in (_affinity_clause(opp, profile), _size_clause(opp, profile),
+                              _stock_clause(opp)) if c]
+    if supporting:
+        fact = supporting[0]
+        lead += f" {fact[0].upper()}{fact[1:]}."
+    lead += " Offer to put one aside if they would like to see it."
+    return lead
 
 
 def _talking_points(opp: dict[str, Any], profile: dict[str, Any]) -> list[str]:
-    """What to have in mind on the call. Facts, not a script."""
+    """Practical facts to have on hand — product, price, size, stock. Never
+    the internal reason the card exists (see ``_call_brief`` for that)."""
     product = opp.get("product") or {}
     points: list[str] = []
-    if opp.get("why_now"):
-        points.append(opp["why_now"])
     if product.get("name"):
         parts = [product["name"]]
         for extra in (product.get("brand"),
@@ -209,6 +250,10 @@ def build(opp: dict[str, Any], profile: dict[str, Any], channel: str) -> dict[st
             "kind": "brief",
             "subject": None,
             "body": None,
+            # The natural opening — labelled "Suggested call brief" in the UI,
+            # and what "Copy" copies. talking_points stays as reference facts
+            # only; it is never what gets copied.
+            "brief": _call_brief(opp, profile),
             "talking_points": _talking_points(opp, profile),
         }
     else:
@@ -223,6 +268,7 @@ def build(opp: dict[str, Any], profile: dict[str, Any], channel: str) -> dict[st
             "kind": "message",
             "subject": _subject(opp) if channel == "email" else None,
             "body": body,
+            "brief": None,
             "talking_points": [],
         }
 

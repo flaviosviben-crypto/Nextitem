@@ -23,12 +23,18 @@ def overview() -> dict[str, Any]:
 
     summary = workspace.summary
     today = todays_list(workspace.opportunities)
-    opp_counts = counts(workspace.opportunities, workspace.pipeline)
+    opp_counts = counts(workspace.opportunities, workspace.pipeline, daily_cap=workspace.daily_cap,
+                       product_matching_available=workspace.product_matching_available)
     report = workspace.performance or perf.report(workspace.pipeline,
-                                                  workspace.transactions_raw)
+                                                  workspace.transactions_raw,
+                                                  as_of=workspace.as_of)
 
     return {
         "loaded": True,
+        # The one snapshot date every screen's relative dates and lifecycle
+        # calculations are computed against — shown in the shell so "1 day"
+        # reads correctly against the calendar date it is relative to.
+        "as_of": workspace.as_of.isoformat(),
         "today": {
             "opportunities": len(today),
             # Same numbers the Opportunities screen and Performance report use;
@@ -44,8 +50,10 @@ def overview() -> dict[str, Any]:
                 f"{opp_counts['detected']} "
                 f"{'opportunity' if opp_counts['detected'] == 1 else 'opportunities'} detected"),
             "influenced_value": round(sum(o.get("influenced_value") or 0 for o in today), 2),
-            "value_basis": ("Recommended piece and each customer's own basket, weighted "
-                            "by a modelled response rate. Not a forecast."),
+            "value_basis": ("Each customer's estimated purchase value — their own order "
+                            "history, the recommended piece's price, or a blend of both, "
+                            "depending on what is known — weighted by a modelled response "
+                            "rate. Not a forecast."),
             "top": [{
                 "id": o["id"],
                 "customer_id": o["customer_id"],

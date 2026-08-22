@@ -163,15 +163,24 @@ def describe_actions(profile: dict[str, Any], matches: list[dict[str, Any]]) -> 
     stage = profile.get("lifecycle")
     cycle = profile.get("cycle_days")
     against = f" against their {cycle:.0f}-day cycle" if cycle else ""
+    # No cycle of any provenance (personal or cohort) to compare against — a
+    # recency-fallback customer, or a dataset with no transaction history at
+    # all. "Rhythm" and "usual" both claim a personalised pattern this data
+    # cannot show, so the recency-only phrasing is used instead.
+    has_cycle = profile.get("cycle_source") not in (None, "none")
     if stage == "Due":
         actions.append(f"Contact this week — they are at their repurchase point{against}.")
     elif stage == "At Risk":
-        actions.append(f"Contact now — they have drifted past their usual rhythm{against}.")
+        actions.append(f"Contact now — they have drifted past their usual rhythm{against}."
+                       if has_cycle else
+                       "Contact now — they are well beyond the recent purchase window.")
     elif stage == "Lost":
         actions.append("Win-back conversation — they need a real reason to return, "
                        "not a routine follow-up.")
-    else:
+    elif has_cycle:
         actions.append("No need to chase — they are inside their normal buying rhythm.")
+    else:
+        actions.append("No need to chase — purchased within the recent activity window.")
 
     if matches:
         top = matches[0]

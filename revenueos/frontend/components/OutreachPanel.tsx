@@ -79,8 +79,10 @@ export function OutreachPanel({
   }, [load]);
 
   const copy = async () => {
+    // The brief is the only thing "Copy" ever copies for a call — never the
+    // internal facts list, and never the reasoning behind the recommendation.
     const text = draft?.kind === "brief"
-      ? (draft.talking_points || []).join("\n")
+      ? draft.brief || ""
       : [subject, body].filter(Boolean).join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -151,7 +153,6 @@ export function OutreachPanel({
               </span>
             )}
           </div>
-          <p className="mt-1 text-[12.5px] text-[var(--ink-2)]">{draft.why_now}</p>
         </div>
         {draft.influenced_value !== null && (
           <div className="num shrink-0 text-[14px] font-semibold">
@@ -199,14 +200,19 @@ export function OutreachPanel({
         </div>
       ) : (
         <div className="mt-3.5 rounded-lg bg-[var(--raised)] p-4">
-          <div className="eyebrow mb-2">Before you call</div>
-          <ul className="space-y-1.5">
-            {draft.talking_points.map((point) => (
-              <li key={point} className="text-[13px] leading-snug text-[var(--ink-2)]">
-                · {point}
-              </li>
-            ))}
-          </ul>
+          <div className="eyebrow mb-2">Suggested call brief</div>
+          {/* What "Copy" copies — a natural opening, never the reasoning the
+              recommendation is built from. */}
+          <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]">{draft.brief}</p>
+          {draft.talking_points.length > 0 && (
+            <ul className="mt-3 space-y-1.5 border-t border-[var(--line)] pt-3">
+              {draft.talking_points.map((point) => (
+                <li key={point} className="text-[12px] leading-snug text-[var(--ink-3)]">
+                  · {point}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -248,5 +254,95 @@ export function OutreachPanel({
         only &ldquo;Mark as contacted&rdquo; records the outreach.
       </p>
     </Card>
+  );
+}
+
+/**
+ * A read-only look at what the advisor would say, before they have decided to
+ * act on the card at all — "what do I say" answered at the moment it is
+ * asked, not only after "Ready to contact" is clicked.
+ *
+ * Deliberately smaller than the full panel: no channel switcher, no editing,
+ * no "Mark as contacted". Those stay behind the decision they follow, so this
+ * preview cannot create a state the rest of the product does not expect.
+ */
+export function OutreachPreview({ opportunityId }: { opportunityId: string }) {
+  const [draft, setDraft] = useState<OutreachDraft | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<OutreachDraft>(`/outreach/${encodeURIComponent(opportunityId)}`)
+      .then((next) => {
+        if (!cancelled) setDraft(next);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not build a draft.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [opportunityId]);
+
+  const copy = async () => {
+    if (!draft) return;
+    // The brief, never the internal facts list — same rule as the full panel.
+    const text =
+      draft.kind === "brief"
+        ? draft.brief || ""
+        : [draft.subject, draft.body].filter(Boolean).join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Could not reach the clipboard — select the text and copy it.");
+    }
+  };
+
+  if (loading) {
+    return <Skeleton className="h-20 w-full rounded-lg" />;
+  }
+
+  if (error || !draft) {
+    return <p className="text-[12px] text-[var(--critical)]">{error || "Could not load a suggested message."}</p>;
+  }
+
+  return (
+    <div className="rounded-lg bg-[var(--raised)] p-3.5">
+      {draft.kind === "message" ? (
+        <p className="whitespace-pre-line text-[13px] leading-relaxed text-[var(--ink-2)]">
+          {[draft.subject, draft.body].filter(Boolean).join("\n\n")}
+        </p>
+      ) : (
+        <p className="text-[13px] leading-relaxed text-[var(--ink-2)]">{draft.brief}</p>
+      )}
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={copy}>
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+        {!draft.contact_available && draft.kind === "message" && (
+          <span className="text-[11px] text-[var(--warning)]">
+            No {draft.channel === "email" ? "email address" : "phone number"} on file
+          </span>
+        )}
+      </div>
+      {error && <p className="mt-2 text-[11px] text-[var(--critical)]">{error}</p>}
+      <p className="mt-2 text-[10.5px] leading-snug text-[var(--muted)]">
+        A preview on the {draft.channel === "in_store" ? "in-store" : draft.channel} channel.
+        Nothing is recorded until the recommendation is marked as contacted.
+      </p>
+    </div>
   );
 }

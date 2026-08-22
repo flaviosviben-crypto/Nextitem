@@ -182,10 +182,19 @@ def analyse(
                                     sum(len(g) for g in near_dupes), True))
             penalties += 2
     else:
-        findings.append(Finding("warning", "No transaction file imported",
-                                "Customer metrics fall back to summary columns; product-level "
-                                "matching and sell-through cannot be computed."))
-        penalties += 12
+        # Transactions are not one column among many — they are the dataset
+        # RFM, product matching, taste affinity, real buying-cycle timing,
+        # sell-through and dead-stock analysis all depend on. A handful of
+        # clean CRM summary fields cannot compensate for the file being
+        # missing entirely, so this is weighted as the single largest
+        # penalty in the model, not a routine warning.
+        findings.append(Finding("critical", "No transaction file imported",
+                                "Customer metrics fall back to summary columns. RFM, product-level "
+                                "matching, taste affinity and sell-through all stay unavailable "
+                                "without it. Buying-cycle timing still runs, but falls back to "
+                                "recency against fixed windows rather than each customer's own "
+                                "purchase rhythm."))
+        penalties += 30
 
     # ---------- inventory ----------
     if inventory:
@@ -257,9 +266,10 @@ def analyse(
 
     score = int(max(0, min(100, round(100 - penalties))))
     grade = ("Excellent" if score >= 85 else "Good" if score >= 70
-             else "Workable" if score >= 50 else "Limited")
+             else "Partial" if score >= 50 else "Limited")
 
-    caps = _capabilities(customers, transactions, inventory)
+    caps = _capabilities(customers, transactions, inventory,
+                          cat_known=cat_known if transactions else 0)
     report = QualityReport(
         score=score,
         grade=grade,
@@ -289,15 +299,40 @@ def _near_duplicate_labels(labels: list[str]) -> list[list[str]]:
     return [g for g in groups.values() if len(g) > 1]
 
 
-def _capabilities(customers, transactions, inventory) -> list[Capability]:
+def _capabilities(customers, transactions, inventory, cat_known: int = 0) -> list[Capability]:
     has_tx = bool(transactions)
     has_dates = any(t.get("date") for t in transactions)
-    has_cat = any(t.get("category") for t in transactions) or any(p.get("category") for p in inventory)
+    # A catalogue category alone cannot support matching — the signal matching
+    # actually uses is the customer's own category affinity, built from
+    # transaction history. Without transaction-side categories, this stays
+    # unavailable even if every product is neatly categorised.
+    has_cat = cat_known > 0
     has_inv = bool(inventory)
     has_stock = any(p.get("stock") is not None for p in inventory)
     has_price = any(p.get("price") is not None for p in inventory)
     has_consent = any(c.get("marketing_consent") is not None for c in customers)
     has_spend = any(c.get("total_spend") is not None for c in customers) or has_tx
+    # Explicit cost or margin data — never inferred from price alone, since
+    # retail price says nothing about what the piece cost the boutique.
+    has_margin_data = any(p.get("cost") is not None or p.get("margin") is not None
+                          for p in inventory)
+
+    # The missing input is named specifically: a boutique with 500 products
+    # already loaded should never be told to "import products" when the
+    # actual gap is that no transaction carries product or category history.
+    if has_inv and has_cat:
+        matching_reason = "Catalogue and transaction category data are present."
+        matching_unlock = ""
+    elif has_inv:
+        matching_reason = ("Products are catalogued, but no transaction carries "
+                           "product or category data.")
+        matching_unlock = "Import transaction history with SKU or category data."
+    elif has_cat:
+        matching_reason = "Transactions carry category data, but no product catalogue is loaded."
+        matching_unlock = "Import a product catalogue with SKU and category."
+    else:
+        matching_reason = "Needs a product catalogue and transaction history with category data."
+        matching_unlock = "Import products and transaction history with categories."
 
     return [
         Capability("Customer value ranking", has_spend,
@@ -311,16 +346,22 @@ def _capabilities(customers, transactions, inventory) -> list[Capability]:
                    "Recency, frequency and monetary value can all be computed."
                    if has_tx and has_dates else "Needs dated transaction history.",
                    "" if has_tx and has_dates else "Import a transactions file with dates and amounts."),
-        Capability("Product matching", has_inv and has_cat,
-                   "Catalogue and category signals are present."
-                   if has_inv and has_cat else "Needs a catalogue with categories.",
-                   "" if has_inv and has_cat else "Import products with a category column."),
-        Capability("Stock-aware recommendations", has_inv and has_stock,
+        Capability("Product matching", has_inv and has_cat, matching_reason, matching_unlock),
+        # Named for what this actually is — knowing what is in stock — not for
+        # personalised recommendations, which need "Product matching" too.
+        # A green check here beside a warning on Product matching would
+        # otherwise read as "the app can still recommend stock to this
+        # customer," which it cannot.
+        Capability("Stock availability", has_inv and has_stock,
                    "Stock levels are known." if has_stock else "Stock is unknown, availability is unverified.",
                    "" if has_stock else "Add a stock/giacenza column to your product export."),
-        Capability("Margin & inventory value", has_price,
+        Capability("Inventory value", has_price,
                    "Prices are available." if has_price else "No product prices.",
-                   "" if has_price else "Add price (and cost, for margin) to the product export."),
+                   "" if has_price else "Add price to the product export."),
+        Capability("Margin analysis", has_margin_data,
+                   "Cost or margin data is available." if has_margin_data
+                   else "Only retail price is available — margin cannot be calculated from price alone.",
+                   "" if has_margin_data else "Import product cost or margin data."),
         Capability("Compliant outreach", has_consent,
                    "Consent status is recorded." if has_consent else "No consent column: outreach stays preview-only.",
                    "" if has_consent else "Add a marketing consent column to enable approvals."),

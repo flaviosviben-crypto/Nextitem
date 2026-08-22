@@ -110,11 +110,58 @@ def test_each_channel_produces_the_right_shape():
     phone = outreach.build(_opp(), _profile_with(), "phone")
     assert phone["kind"] == "brief"
     assert phone["body"] is None
+    assert phone["brief"]
     assert 2 <= len(phone["talking_points"]) <= 5
     assert phone["deep_link"] == "tel:393201112223"
 
     in_store = outreach.build(_opp(), _profile_with(), "in_store")
     assert in_store["kind"] == "brief" and in_store["deep_link"] is None
+    assert in_store["brief"]
+
+    # Written channels do not carry a call brief — "brief" belongs to spoken
+    # channels only, so a consumer can never mistake one shape for the other.
+    assert email["brief"] is None
+    assert whatsapp["brief"] is None
+
+
+# --------------------------------------------------- call brief, not reasoning --
+
+def test_the_call_brief_is_a_natural_opening_not_internal_reasoning():
+    """The bug this defends against: internal reasoning ('Based on CRM recency
+    summary...', 'Due', 'At Risk') must never surface as something an advisor
+    reads before, or copies for, a call."""
+    opp = _opp(why_now="Based on CRM recency summary · last purchase 100 days ago.",
+               headline="Drifting past their usual rhythm.", trigger="at_risk")
+    draft = outreach.build(opp, _profile_with(), "phone")
+    lowered = draft["brief"].lower()
+
+    for internal in ("crm", "recency", "cycle", "overdue", "due", "at risk",
+                     "segment", "score", "confidence", "algorithm", "modelled",
+                     "expected value"):
+        assert internal not in lowered, internal
+
+    # A natural instruction to the advisor, not a fact dump.
+    assert draft["brief"].startswith("Check in with Pietro")
+    assert draft["brief"] == outreach.build(opp, _profile_with(), "in_store")["brief"]
+
+
+def test_the_call_brief_still_works_with_no_product():
+    """No product cleared the bar — the brief falls back to a genuine check-in,
+    the same shape the ticket's own example describes."""
+    opp = _opp(product=None, trigger="due",
+               why_now="Based on CRM recency summary · last purchase 100 days ago.")
+    draft = outreach.build(opp, _profile_with(), "phone")
+    assert "Check in with Pietro personally" in draft["brief"]
+    assert "new arrivals" in draft["brief"]
+    assert "crm" not in draft["brief"].lower()
+
+
+def test_copying_a_call_brief_copies_the_brief_not_the_facts():
+    """The API surface a client copies from must be the brief, not talking_points
+    — the two must never silently diverge for a consumer that trusts the field."""
+    draft = outreach.build(_opp(), _profile_with(), "phone")
+    assert draft["brief"] not in draft["talking_points"]
+    assert draft["brief"] != "\n".join(draft["talking_points"])
 
 
 def test_missing_contact_details_leave_nothing_to_open():
@@ -173,6 +220,7 @@ def test_the_endpoint_returns_a_usable_draft(client):
         assert draft["body"]
     else:
         assert draft["talking_points"]
+        assert draft["brief"]
 
 
 def test_asking_for_another_permitted_channel_switches_the_draft(client):
