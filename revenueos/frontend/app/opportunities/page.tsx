@@ -145,6 +145,7 @@ export default function OpportunitiesPage() {
                 `${data.detected === 1 ? "opportunity" : "opportunities"}.`
             : "Who to contact today, and what to say."
         }
+        asOf={data?.as_of}
         actions={
           data && data.influenced_value > 0 ? (
             <div className="text-right">

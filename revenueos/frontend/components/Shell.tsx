@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { api, apiIsSlow, subscribeApiSlow } from "@/lib/api";
+import { shortDate } from "@/lib/format";
 import { Badge } from "./ui";
 
 // Six destinations, in the order the work actually happens: see the day, work
@@ -284,11 +285,16 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  asOf,
 }: {
   eyebrow?: string;
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  /** The reference date every recency figure and lifecycle badge on this
+   *  screen is measured against. Shown so "Active" beside "347 days ago"
+   *  never reads as a contradiction — see Workspace.recompute. */
+  asOf?: string | null;
 }) {
   return (
     <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -301,7 +307,17 @@ export function PageHeader({
           </p>
         )}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      <div className="flex flex-wrap items-center gap-3">
+        {asOf && (
+          <span
+            className="whitespace-nowrap text-[11.5px] text-[var(--ink-3)]"
+            title="Recency, lifecycle stages and buying cycles are measured against this date — the most recent activity in your data, which may not be today."
+          >
+            Data as of {shortDate(asOf)}
+          </span>
+        )}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      </div>
     </header>
   );
 }

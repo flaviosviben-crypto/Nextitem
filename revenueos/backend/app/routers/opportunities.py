@@ -56,6 +56,8 @@ def todays_opportunities(trigger: str = "", include_suppressed: bool = False,
         "opportunities": rows,
         "scope": scope,
         "shown": len(rows),
+        # Same reference date every screen uses for recency — see Workspace.recompute.
+        "as_of": workspace.summary.get("as_of"),
         # The relationship the whole product hangs on, in every response.
         **counts(everything, workspace.pipeline),
         "suppressed": suppressed[:50] if include_suppressed else [],
@@ -103,6 +105,8 @@ def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
 
     return {
         "rows": rows[:400],
+        # Same reference date every screen uses for recency — see Workspace.recompute.
+        "as_of": workspace.summary.get("as_of"),
         "counts": by_status,
         "todays_list": on_todays_list,
         "awaiting_decision": awaiting,

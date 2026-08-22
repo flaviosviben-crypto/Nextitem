@@ -78,7 +78,7 @@ export default function OverviewPage() {
 
   return (
     <Page>
-      <PageHeader eyebrow={greeting()} title="Overview" subtitle={today.note} />
+      <PageHeader eyebrow={greeting()} title="Overview" subtitle={today.note} asOf={data.as_of} />
 
       {/* ---- The one thing that matters today ---- */}
       {/* The hero is the dominant element, and on a wide screen it earns that

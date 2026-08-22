@@ -209,14 +209,20 @@ class Workspace:
             transactions = self.transactions_raw
             inventory = self.inventory_raw
 
-            profiles = customer_scoring.build_profiles(customers, transactions)
+            # Resolved once and threaded through every module that measures
+            # recency, so "147 days since last purchase" is the same 147 days
+            # whether it is read on the Overview, Opportunities or Customers
+            # screen. Compliance keeps its own wall-clock "today" — a contact
+            # cooldown counts real days, not days since the last import.
+            reference_date = customer_scoring.resolve_as_of(customers, transactions)
+            profiles = customer_scoring.build_profiles(customers, transactions, reference_date)
             # Value and lifecycle are resolved separately, then eligibility, so the
             # opportunity engine never has to guess at any of the three.
             profiles = segmentation.classify(profiles, self.lifecycle_thresholds)
             profiles = compliance.apply(profiles)
             products = inventory_analytics.build_product_stats(inventory, transactions)
             quality = validation.analyse(customers, transactions, inventory)
-            opps = opp_engine.detect(profiles, products, transactions)
+            opps = opp_engine.detect(profiles, products, transactions, reference_date)
             # Today's workload is decided once, here, and stamped onto every
             # detected opportunity. Screens read that stamp; none of them gets to
             # decide separately what "today" means.
@@ -239,6 +245,10 @@ class Workspace:
             self.performance = performance.report(self.pipeline, transactions)
             self.summary = {
                 "source": self.source,
+                # The reference date every recency figure, lifecycle badge and
+                # "X days ago" on the app is measured against. Surfaced so the
+                # UI can show it, not just use it.
+                "as_of": reference_date.isoformat(),
                 "customers": base,
                 "inventory": inv,
                 "segments": segmentation.summarize(profiles),

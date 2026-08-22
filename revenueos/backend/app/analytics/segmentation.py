@@ -57,13 +57,17 @@ VALUE_META = {
 
 LIFECYCLE_META = {
     "Active": {"tone": "positive", "urgency": 0.25,
-               "meaning": "Within their normal buying rhythm."},
+               "meaning": "Within their buying rhythm — their own cadence where it is "
+                          "known, a standard recency window otherwise."},
     "Due": {"tone": "attention", "urgency": 1.0,
-            "meaning": "At the point where another purchase would normally happen."},
+            "meaning": "At the point another purchase would typically happen — by their "
+                       "own cadence where known, a standard recency window otherwise."},
     "At Risk": {"tone": "warning", "urgency": 0.85,
-                "meaning": "Meaningfully beyond their normal rhythm."},
+                "meaning": "Meaningfully overdue — by their own cadence where known, a "
+                           "standard recency window otherwise."},
     "Lost": {"tone": "negative", "urgency": 0.55,
-             "meaning": "Substantially beyond their rhythm — needs genuine win-back."},
+             "meaning": "Substantially overdue — by their own cadence where known, a "
+                        "standard recency window otherwise — needs genuine win-back."},
 }
 
 
@@ -193,7 +197,15 @@ def classify_lifecycle(recency_days: int | None, cycle_days: float | None,
         return {
             "lifecycle": stage,
             "cycle_position": None,
-            "lifecycle_basis": f"{recency_days} days since last purchase (no cycle available)",
+            # No personal or cohort cadence exists for this customer, so the
+            # stage comes from a flat industry-standard recency window rather
+            # than anything about how *they* buy — say so plainly, or the
+            # badge reads as more personalized than it is.
+            "lifecycle_basis": (
+                f"{recency_days} days since last purchase — no personal or cohort cadence "
+                f"available, so this is judged against a fixed recency window "
+                f"({r['active_max']}/{r['due_max']}/{r['at_risk_max']} days for "
+                f"Active/Due/At Risk)"),
             "lifecycle_confidence": "Low",
         }
 

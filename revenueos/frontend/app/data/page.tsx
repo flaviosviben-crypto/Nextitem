@@ -153,6 +153,7 @@ export default function DataPage() {
         eyebrow="Data"
         title="Your data"
         subtitle="Three standard exports are all RevenueOS needs. Send them to us and we'll set the boutique up for you — or drop them in here and we'll map the columns, asking you only where we are unsure."
+        asOf={summary.data?.as_of}
         actions={
           <>
             {/* Say the demo is loaded rather than offering to load it again:

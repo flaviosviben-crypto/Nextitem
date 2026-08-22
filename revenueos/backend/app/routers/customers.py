@@ -68,6 +68,8 @@ def list_customers(
         "total": len(rows),
         "offset": offset,
         "limit": limit,
+        # Same reference date every screen uses for recency — see Workspace.recompute.
+        "as_of": workspace.summary.get("as_of"),
         "customers": [{
             "customer_id": p["customer_id"], "name": p["name"],
             "value_tier": p.get("value_tier"), "lifecycle": p.get("lifecycle"),

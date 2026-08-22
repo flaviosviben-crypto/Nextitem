@@ -293,6 +293,9 @@ export type OpportunityFeed = OpportunityCounts & {
   opportunities: Opportunity[];
   shown: number;
   scope: string;
+  /** The reference date every recency figure and lifecycle badge is measured
+   *  against — the latest activity in the data, not wall-clock "today". */
+  as_of?: string | null;
   suppressed: Opportunity[];
   suppressed_count: number;
   influenced_value: number;
@@ -340,6 +343,9 @@ export const DECLINE_REASONS: { code: string; label: string }[] = [
 
 export type ActionCenter = {
   rows: ActionRow[];
+  /** The reference date every recency figure and lifecycle badge is measured
+   *  against — the latest activity in the data, not wall-clock "today". */
+  as_of?: string | null;
   counts: Record<string, number>;
   /** Set-aside counts by reason code, for later analysis. */
   decline_reasons: Record<string, number>;
@@ -358,6 +364,9 @@ export type ActionCenter = {
 
 export type Overview = {
   loaded: boolean;
+  /** The reference date every recency figure and lifecycle badge on the app is
+   *  measured against — the latest activity in the data, not wall-clock "today". */
+  as_of?: string | null;
   today?: OpportunityCounts & {
     opportunities: number;
     note: string;
@@ -529,6 +538,9 @@ export type CustomerDetail = {
 export type Summary = {
   loaded: boolean;
   source?: string;
+  /** The reference date every recency figure and lifecycle badge is measured
+   *  against — the latest activity in the data, not wall-clock "today". */
+  as_of?: string | null;
   revenue_opportunity?: number;
   opportunities?: number;
   actionable_opportunities?: number;

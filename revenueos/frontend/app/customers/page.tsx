@@ -22,6 +22,9 @@ type Listing = {
   total: number;
   customers: CustomerRow[];
   facets: { value_tiers: string[]; lifecycles: string[]; stores: string[] };
+  /** The reference date every recency figure and lifecycle badge is measured
+   *  against — the latest activity in the data, not wall-clock "today". */
+  as_of?: string | null;
 };
 
 export default function CustomersPage() {
@@ -65,6 +68,7 @@ export default function CustomersPage() {
         eyebrow="Customers"
         title="Customer base"
         subtitle="Value and buying cycle are shown separately. A customer is a VIP because of what they spend, not because of when they last came in."
+        asOf={listing.data?.as_of}
       />
 
       <Card padded={false}>

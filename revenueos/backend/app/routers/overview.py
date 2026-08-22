@@ -29,6 +29,10 @@ def overview() -> dict[str, Any]:
 
     return {
         "loaded": True,
+        # The date every recency figure on this page (and every other screen)
+        # is measured against — the latest activity in the data, not wall-clock
+        # "today". See Workspace.recompute.
+        "as_of": summary.get("as_of"),
         "today": {
             "opportunities": len(today),
             # Same numbers the Opportunities screen and Performance report use;

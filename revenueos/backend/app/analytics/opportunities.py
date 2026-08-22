@@ -93,7 +93,10 @@ def _lifecycle_trigger(profile: dict[str, Any]) -> dict[str, Any] | None:
         why = (f"Last bought {_plural_days(recency)} ago against a {round(cycle)}-day "
                f"buying cycle{qualifier}.")
     else:
-        why = f"Last bought {_plural_days(recency)} ago."
+        # No personal or cohort cadence exists — the stage came from a flat
+        # recency window, not this customer's own rhythm. Say that outright
+        # rather than letting "Due"/"At Risk" imply a cycle nobody observed.
+        why = f"Last bought {_plural_days(recency)} ago — no personal buying cycle available, judged against a standard recency window."
 
     return {"kind": kind, "headline": headline, "why_now": why,
             "evidence": profile.get("lifecycle_basis")}

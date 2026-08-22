@@ -69,6 +69,23 @@ def _median_gap_days(dates: list[date]) -> tuple[float, int] | None:
     return max(floor, median), len(gaps)
 
 
+def resolve_as_of(customers: list[dict[str, Any]], transactions: list[dict[str, Any]]) -> date:
+    """The reference date every recency figure in the pipeline is measured against.
+
+    The latest date actually seen in the data — not wall-clock "today" — so a
+    boutique's numbers stay meaningful between imports instead of quietly
+    drifting stale while the calendar moves on without new data. Callers that
+    feed the same customers and transactions into more than one analytics
+    module (see ``workspace.recompute``) resolve this once and pass it through
+    everywhere, so "147 days since last purchase" never means two different
+    dates on two different screens.
+    """
+    tx_dates = [t["date"] for t in transactions if t.get("date")]
+    cust_dates = [c["last_purchase_date"] for c in customers if c.get("last_purchase_date")]
+    all_dates = tx_dates + cust_dates
+    return max(all_dates) if all_dates else date.today()
+
+
 def build_profiles(
     customers: list[dict[str, Any]],
     transactions: list[dict[str, Any]],
@@ -84,10 +101,7 @@ def build_profiles(
         tx_by_customer[t["customer_id"]].append(t)
 
     if as_of is None:
-        tx_dates = [t["date"] for t in transactions if t.get("date")]
-        cust_dates = [c["last_purchase_date"] for c in customers if c.get("last_purchase_date")]
-        all_dates = tx_dates + cust_dates
-        as_of = max(all_dates) if all_dates else date.today()
+        as_of = resolve_as_of(customers, transactions)
 
     base = {c["customer_id"]: c for c in customers}
     for cid in tx_by_customer:

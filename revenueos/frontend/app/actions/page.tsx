@@ -101,6 +101,7 @@ export default function ActionsPage() {
         eyebrow="Workflow"
         title="Action Center"
         subtitle="Every opportunity an advisor decided on, and where it stands."
+        asOf={data?.as_of}
       />
 
       {data && (
