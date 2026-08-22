@@ -452,6 +452,38 @@ export type Overview = {
   counts?: { customers: number; transactions: number; products: number };
 };
 
+/** Shared shape of every advisor/store breakdown row on the Performance page. */
+export type PerformanceGroupRow = {
+  recommended: number;
+  decisions_made: number;
+  contacted: number;
+  converted: number;
+  conversion_rate: number | null;
+  revenue_after_contact: number;
+  estimated_incremental_revenue: number;
+};
+
+export type AdvisorPerformanceRow = PerformanceGroupRow & { advisor: string };
+export type StorePerformanceRow = PerformanceGroupRow & { store: string };
+
+export type ChannelPerformanceRow = {
+  channel: string;
+  channel_label: string;
+  contacted: number;
+  converted: number;
+  conversion_rate: number | null;
+  revenue_after_contact: number;
+};
+
+export type ReasonPerformanceRow = {
+  trigger: string;
+  recommended: number;
+  contacted: number;
+  converted: number;
+  conversion_rate: number | null;
+  revenue_after_contact: number;
+};
+
 export type Performance = {
   loaded: boolean;
   window_days: number;
@@ -465,6 +497,8 @@ export type Performance = {
   untouched: number;
   /** On today's list and still waiting on the advisor. */
   awaiting_decision: number;
+  /** Recommended rows this window has ruled on, one way or another. */
+  decisions_made: number;
   /** Detected, but never recommended — held back, not owed. */
   detected_not_recommended: number;
   /** Expected value sitting on today's recommended list. */
@@ -481,13 +515,36 @@ export type Performance = {
   incremental_revenue_basis: string;
   measurement_caveat: string;
   attribution_note: string;
-  by_trigger: {
-    trigger: string;
-    recommended: number;
-    contacted: number;
-    converted: number;
-    conversion_rate: number | null;
-  }[];
+  by_trigger: ReasonPerformanceRow[];
+  /** Reason/trigger is the finest grain RevenueOS records — always false today. */
+  template_attribution_supported: boolean;
+  template_attribution_note: string;
+
+  /** Advisor / Team Performance. */
+  by_advisor: AdvisorPerformanceRow[];
+  /** False when no transaction in the dataset names an advisor at all. */
+  advisor_data_available: boolean;
+  /** Recommended rows in this window for a customer no transaction names an advisor for. */
+  unattributed_recommendations_advisor: number;
+  advisor_attribution_basis: string;
+
+  by_store: StorePerformanceRow[];
+  store_data_available: boolean;
+  unattributed_recommendations_store: number;
+  store_attribution_basis: string;
+
+  /** Channel Performance — always all five channels, zeroed if unused. */
+  by_channel: ChannelPerformanceRow[];
+  /** Contacts recorded without going through the outreach flow, so no channel was stamped. */
+  unspecified_channel_contacts: number;
+  channel_basis: string;
+
+  filters: {
+    advisor: string | null;
+    store: string | null;
+    advisors: string[];
+    stores: string[];
+  };
 };
 
 export type CustomerRow = {

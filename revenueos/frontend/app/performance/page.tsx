@@ -10,9 +10,26 @@
 
 import { useState } from "react";
 import { Page, PageHeader } from "@/components/Shell";
-import { Card, ErrorState, SectionTitle, Skeleton, Stat, Td, Th, Value } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  SectionTitle,
+  Skeleton,
+  Stat,
+  Td,
+  Th,
+  Value,
+  inputClass,
+} from "@/components/ui";
 import { Funnel } from "@/components/charts";
-import { useApi, type Performance } from "@/lib/api";
+import {
+  useApi,
+  type AdvisorPerformanceRow,
+  type Performance,
+  type StorePerformanceRow,
+} from "@/lib/api";
 import {
   EXPECTED_VALUE,
   EXPECTED_VALUE_HELP,
@@ -30,9 +47,16 @@ const WINDOWS = [
 
 export default function PerformancePage() {
   const [window, setWindow] = useState(30);
+  const [advisor, setAdvisor] = useState("");
+  const [store, setStore] = useState("");
+
+  const params = new URLSearchParams({ window_days: String(window) });
+  if (advisor) params.set("advisor", advisor);
+  if (store) params.set("store", store);
+
   const { data, loading, error, refresh } = useApi<Performance>(
-    `/performance?window_days=${window}`,
-    [window],
+    `/performance?${params.toString()}`,
+    [window, advisor, store],
   );
 
   return (
@@ -42,23 +66,68 @@ export default function PerformancePage() {
         title="Performance"
         subtitle="What RevenueOS produced, and what the boutique did with it."
         actions={
-          <div className="flex gap-1.5">
-            {WINDOWS.map((w) => (
-              <button
-                key={w.days}
-                onClick={() => setWindow(w.days)}
-                className={
-                  window === w.days
-                    ? "rounded-lg border border-[var(--accent)] px-3 py-1.5 text-[12px] font-medium"
-                    : "rounded-lg border border-[var(--line)] px-3 py-1.5 text-[12px] text-[var(--ink-2)] hover:border-[var(--line-strong)]"
-                }
+          <>
+            {data && data.filters.advisors.length > 0 && (
+              <select
+                value={advisor}
+                onChange={(e) => setAdvisor(e.target.value)}
+                className={`${inputClass} w-auto`}
+                aria-label="Filter by advisor"
               >
-                {w.label}
-              </button>
-            ))}
-          </div>
+                <option value="">All advisors</option>
+                {data.filters.advisors.map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+            )}
+            {data && data.filters.stores.length > 0 && (
+              <select
+                value={store}
+                onChange={(e) => setStore(e.target.value)}
+                className={`${inputClass} w-auto`}
+                aria-label="Filter by store"
+              >
+                <option value="">All stores</option>
+                {data.filters.stores.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
+            <div className="flex gap-1.5">
+              {WINDOWS.map((w) => (
+                <button
+                  key={w.days}
+                  onClick={() => setWindow(w.days)}
+                  className={
+                    window === w.days
+                      ? "rounded-lg border border-[var(--accent)] px-3 py-1.5 text-[12px] font-medium"
+                      : "rounded-lg border border-[var(--line)] px-3 py-1.5 text-[12px] text-[var(--ink-2)] hover:border-[var(--line-strong)]"
+                  }
+                >
+                  {w.label}
+                </button>
+              ))}
+            </div>
+          </>
         }
       />
+
+      {(advisor || store) && (
+        <div className="mb-5 -mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-2)]">
+          <span>Showing only:</span>
+          {advisor && <Badge color="var(--accent)">{advisor}</Badge>}
+          {store && <Badge color="var(--accent)">{store}</Badge>}
+          <button
+            onClick={() => {
+              setAdvisor("");
+              setStore("");
+            }}
+            className="text-[var(--accent)] hover:underline"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {loading && <Skeleton className="h-64 w-full rounded-xl" />}
       {error && <ErrorState message={error} onRetry={refresh} />}
@@ -190,10 +259,7 @@ export default function PerformancePage() {
                   { label: "Recommended", value: data.prioritized_today },
                   // Recommended splits into decided and still-waiting; showing
                   // the decided half is what connects the inbox to this page.
-                  {
-                    label: "Decisions made",
-                    value: Math.max(0, data.prioritized_today - data.awaiting_decision),
-                  },
+                  { label: "Decisions made", value: data.decisions_made },
                   { label: "Contacted", value: data.customers_contacted },
                   { label: "Converted", value: data.conversions },
                 ]}
@@ -212,6 +278,106 @@ export default function PerformancePage() {
           )}
           </div>
 
+          {/* Section 1: advisor / team performance. Gated on there being any
+              opportunity activity at all, same as the funnel above — a brand
+              new workspace should not show five empty breakdown cards. */}
+          {data.opportunities_detected > 0 && (
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+              <Card padded={false}>
+                <div className="p-5 pb-0">
+                  <SectionTitle
+                    title="Advisor performance"
+                    hint="Recommendations, decisions and revenue after contact — by who has sold to each customer before."
+                  />
+                </div>
+                <GroupPerformanceTable
+                  rows={data.by_advisor}
+                  labelHeader="Advisor"
+                  getLabel={(r) => (r as AdvisorPerformanceRow).advisor}
+                  dataAvailable={data.advisor_data_available}
+                  unavailableBody="No transaction in the imported data names a Sales Advisor, so recommendations cannot be broken down by advisor."
+                  emptyBody="Nobody with a known advisor was recommended in the selected period."
+                  unattributedCount={data.unattributed_recommendations_advisor}
+                  basis={data.advisor_attribution_basis}
+                />
+              </Card>
+
+              <Card padded={false}>
+                <div className="p-5 pb-0">
+                  <SectionTitle
+                    title="Store performance"
+                    hint="The same breakdown, by the customer's own store."
+                  />
+                </div>
+                <GroupPerformanceTable
+                  rows={data.by_store}
+                  labelHeader="Store"
+                  getLabel={(r) => (r as StorePerformanceRow).store}
+                  dataAvailable={data.store_data_available}
+                  unavailableBody="No customer or transaction record in the imported data names a store."
+                  emptyBody="Nobody with a known store was recommended in the selected period."
+                  unattributedCount={data.unattributed_recommendations_store}
+                  basis={data.store_attribution_basis}
+                />
+              </Card>
+            </div>
+          )}
+
+          {/* Section 2: channel performance. Every channel a contact can be
+              recorded on is always shown, zeroed where unused — an honest
+              empty state rather than a table that only grows over time. */}
+          {data.opportunities_detected > 0 && (
+            <Card padded={false}>
+              <div className="p-5 pb-0">
+                <SectionTitle
+                  title="Channel performance"
+                  hint="Contacted, converted and revenue after contact, by the channel actually used."
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-[13px]">
+                  <thead>
+                    <tr>
+                      <Th>Channel</Th>
+                      <Th align="right">Contacted</Th>
+                      <Th align="right">Converted</Th>
+                      <Th align="right">Rate</Th>
+                      <Th align="right">Revenue after contact</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.by_channel.map((row) => (
+                      <tr key={row.channel} className="border-t border-[var(--line)]">
+                        <Td>{row.channel_label}</Td>
+                        <Td align="right">{num(row.contacted)}</Td>
+                        <Td align="right">{num(row.converted)}</Td>
+                        <Td align="right">
+                          <Value hint="No contacts recorded on this channel yet">
+                            {row.conversion_rate === null ? null : pct(row.conversion_rate)}
+                          </Value>
+                        </Td>
+                        <Td align="right">{money(row.revenue_after_contact)}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {data.unspecified_channel_contacts > 0 && (
+                <p className="border-t border-[var(--line)] px-5 py-3 text-[12px] text-[var(--ink-3)]">
+                  {num(data.unspecified_channel_contacts)}{" "}
+                  {data.unspecified_channel_contacts === 1 ? "contact" : "contacts"} recorded without
+                  going through the outreach flow, so no channel could be attributed.
+                </p>
+              )}
+              <p className="px-5 pb-5 pt-3 text-[11px] leading-relaxed text-[var(--ink-3)]">
+                {data.channel_basis}
+              </p>
+            </Card>
+          )}
+
+          {/* Section 3: message/outreach effectiveness, by reason. RevenueOS
+              records the trigger a card was generated for, not which specific
+              wording was sent — see template_attribution_note below the table. */}
           {data.by_trigger.length > 0 && (
             <Card padded={false}>
               <div className="p-5 pb-0">
@@ -221,7 +387,7 @@ export default function PerformancePage() {
                 />
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-[13px]">
+                <table className="w-full min-w-[640px] text-[13px]">
                   <thead>
                     <tr>
                       <Th>Reason</Th>
@@ -229,6 +395,7 @@ export default function PerformancePage() {
                       <Th align="right">Contacted</Th>
                       <Th align="right">Converted</Th>
                       <Th align="right">Rate</Th>
+                      <Th align="right">Revenue after contact</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -243,16 +410,101 @@ export default function PerformancePage() {
                             {row.conversion_rate === null ? null : pct(row.conversion_rate)}
                           </Value>
                         </Td>
+                        <Td align="right">{money(row.revenue_after_contact)}</Td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {!data.template_attribution_supported && (
+                <p className="px-5 pb-5 pt-3 text-[11px] leading-relaxed text-[var(--ink-3)]">
+                  {data.template_attribution_note}
+                </p>
+              )}
             </Card>
           )}
         </div>
       )}
     </Page>
+  );
+}
+
+/**
+ * The shared table behind Advisor performance and Store performance — same
+ * columns, same honesty rules, different grouping key. Handles the two ways
+ * a group can legitimately have nothing to show: the dataset never supported
+ * this dimension at all, or it does and there is simply no row in the
+ * selected window.
+ */
+function GroupPerformanceTable({
+  rows,
+  labelHeader,
+  getLabel,
+  dataAvailable,
+  unavailableBody,
+  emptyBody,
+  unattributedCount,
+  basis,
+}: {
+  rows: (AdvisorPerformanceRow | StorePerformanceRow)[];
+  labelHeader: string;
+  getLabel: (row: AdvisorPerformanceRow | StorePerformanceRow) => string;
+  dataAvailable: boolean;
+  unavailableBody: string;
+  emptyBody: string;
+  unattributedCount: number;
+  basis: string;
+}) {
+  if (!dataAvailable) {
+    return <EmptyState title="Not tracked in this dataset" body={unavailableBody} />;
+  }
+  if (rows.length === 0) {
+    return <EmptyState title="No recommendations in this window" body={emptyBody} />;
+  }
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-[13px]">
+          <thead>
+            <tr>
+              <Th>{labelHeader}</Th>
+              <Th align="right">Recomm.</Th>
+              <Th align="right">Decided</Th>
+              <Th align="right">Contacted</Th>
+              <Th align="right">Converted</Th>
+              <Th align="right">Rate</Th>
+              <Th align="right">Revenue after contact</Th>
+              <Th align="right">Est. incremental</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={getLabel(row)} className="border-t border-[var(--line)]">
+                <Td>{getLabel(row)}</Td>
+                <Td align="right">{num(row.recommended)}</Td>
+                <Td align="right">{num(row.decisions_made)}</Td>
+                <Td align="right">{num(row.contacted)}</Td>
+                <Td align="right">{num(row.converted)}</Td>
+                <Td align="right">
+                  <Value hint="Nobody contacted yet">
+                    {row.conversion_rate === null ? null : pct(row.conversion_rate)}
+                  </Value>
+                </Td>
+                <Td align="right">{money(row.revenue_after_contact)}</Td>
+                <Td align="right">{money(row.estimated_incremental_revenue)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {unattributedCount > 0 && (
+        <p className="border-t border-[var(--line)] px-5 py-3 text-[12px] text-[var(--ink-3)]">
+          {num(unattributedCount)} more {unattributedCount === 1 ? "recommendation" : "recommendations"}{" "}
+          could not be attributed and are excluded from this table.
+        </p>
+      )}
+      <p className="px-5 pb-5 pt-3 text-[11px] leading-relaxed text-[var(--ink-3)]">{basis}</p>
+    </>
   );
 }
 

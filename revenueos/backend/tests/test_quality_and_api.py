@@ -194,6 +194,41 @@ def test_performance_separates_observed_from_estimated(client):
     assert body["attribution_note"]
 
 
+def test_performance_exposes_team_channel_and_reason_breakdowns(client):
+    """The demo dataset carries a Sales Advisor and a Store column, so the
+    advisor/store breakdowns and filter dropdowns must be populated from it —
+    never fabricated when the data is genuinely there."""
+    body = client.get("/api/performance").json()
+    assert body["filters"]["advisors"]
+    assert body["filters"]["stores"]
+    assert body["advisor_data_available"] is True
+    assert body["store_data_available"] is True
+    assert isinstance(body["by_advisor"], list)
+    assert isinstance(body["by_store"], list)
+    assert {c["channel"] for c in body["by_channel"]} == {
+        "phone", "whatsapp", "email", "sms", "in_store"}
+    assert body["template_attribution_supported"] is False
+    assert body["template_attribution_note"]
+    for row in body["by_trigger"]:
+        assert "revenue_after_contact" in row
+
+
+def test_performance_can_be_filtered_to_one_advisor_or_store(client):
+    body = client.get("/api/performance").json()
+    advisor = body["filters"]["advisors"][0]
+
+    filtered = client.get(f"/api/performance?advisor={advisor}").json()
+    assert filtered["filters"]["advisor"] == advisor
+    assert filtered["opportunities_detected"] <= body["opportunities_detected"]
+    # The dropdown itself must not shrink under a filter.
+    assert filtered["filters"]["advisors"] == body["filters"]["advisors"]
+
+    store = body["filters"]["stores"][0]
+    store_filtered = client.get(f"/api/performance?store={store}").json()
+    assert store_filtered["filters"]["store"] == store
+    assert store_filtered["opportunities_detected"] <= body["opportunities_detected"]
+
+
 def test_a_recorded_sale_is_never_presented_as_incremental(client):
     """We may claim only part of a sale as caused by RevenueOS, never all of it."""
     actions = client.get("/api/actions").json()

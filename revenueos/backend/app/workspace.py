@@ -262,7 +262,8 @@ class Workspace:
             self.opportunities = opps
             self.quality = quality.to_dict()
             self.pipeline = _merge_pipeline(self.pipeline, opp_engine.pipeline_defaults(opps))
-            self.performance = performance.report(self.pipeline, transactions, as_of=self.as_of)
+            self.performance = performance.report(self.pipeline, transactions, as_of=self.as_of,
+                                                   profiles=profiles)
             self.summary = {
                 "source": self.source,
                 "customers": base,
@@ -295,7 +296,8 @@ class Workspace:
         never lags behind what the advisor just did.
         """
         with self._lock:
-            self.performance = performance.report(self.pipeline, self.transactions_raw, as_of=self.as_of)
+            self.performance = performance.report(self.pipeline, self.transactions_raw,
+                                                   as_of=self.as_of, profiles=self.profiles)
 
     def audit(self, row_id: str, status: str, note: str | None = None,
               actor: str = "advisor") -> None:
