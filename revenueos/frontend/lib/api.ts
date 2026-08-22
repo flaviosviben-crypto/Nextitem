@@ -313,6 +313,8 @@ export type ActionRow = {
   match_pct: number | null;
   channel: string | null;
   contactable: boolean;
+  basket_value: number | null;
+  probability: number | null;
   influenced_value: number | null;
   incremental_value: number | null;
   realised_value?: number | null;

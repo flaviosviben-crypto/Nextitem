@@ -26,7 +26,15 @@ import {
   inputClass,
 } from "@/components/ui";
 import { api, useApi, type ActionCenter, type ActionRow } from "@/lib/api";
-import { lifecycleColor, money, shortDate, triggerLabel, valueColor } from "@/lib/format";
+import {
+  EXPECTED_VALUE_HELP,
+  expectedValueBreakdown,
+  lifecycleColor,
+  money,
+  shortDate,
+  triggerLabel,
+  valueColor,
+} from "@/lib/format";
 
 // Colour carries the same meaning as the word, never instead of it.
 const STATE_COLOR: Record<string, string> = {
@@ -231,7 +239,22 @@ export default function ActionsPage() {
                           <Value hint="No permitted channel on file">{row.channel}</Value>
                         </Td>
                         <Td align="right">
-                          <Value>{money(row.influenced_value)}</Value>
+                          {/* The Product column shows match % beside this figure, but
+                              match % is not what this was built from — the tooltip
+                              carries the real basket value and probability so the
+                              two numbers are never mistaken for multiplicand and
+                              product. */}
+                          <span
+                            title={
+                              expectedValueBreakdown(
+                                row.basket_value,
+                                row.probability,
+                                row.influenced_value,
+                              ) || EXPECTED_VALUE_HELP
+                            }
+                          >
+                            <Value>{money(row.influenced_value)}</Value>
+                          </span>
                         </Td>
                         <Td className="relative">
                           <select

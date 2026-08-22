@@ -209,3 +209,24 @@ export const EXPECTED_VALUE = "Expected value";
 export const EXPECTED_VALUE_HELP =
   "Each recommendation's estimated purchase value × its modelled conversion " +
   "probability. Modelled from retail benchmarks, not measured here.";
+
+/**
+ * Spells out the two real inputs behind an "Expected value" figure.
+ *
+ * The product panel beside it shows price and match % — neither is an input
+ * to this formula, so multiplying those two will not reproduce the number on
+ * screen. Basket value blends price with the customer's own average order
+ * value, and probability is a modelled response rate, not the match score.
+ * Returns null when there is not enough history to have priced a basket.
+ */
+export function expectedValueBreakdown(
+  basketValue: number | null | undefined,
+  probability: number | null | undefined,
+  expectedValue: number | null | undefined,
+): string | null {
+  if (basketValue === null || basketValue === undefined) return null;
+  if (probability === null || probability === undefined) return null;
+  if (expectedValue === null || expectedValue === undefined) return null;
+  return `${money(basketValue, true)} basket value × ${pct(probability)} probability ` +
+    `= ${money(expectedValue, true)}`;
+}

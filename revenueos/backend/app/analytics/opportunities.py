@@ -511,6 +511,11 @@ def pipeline_defaults(opportunities: list[dict[str, Any]]) -> list[dict[str, Any
             "match_pct": (opp.get("product") or {}).get("match_pct"),
             "channel": (opp["eligibility"].get("preferred_channel") or {}).get("label"),
             "contactable": opp["contactable"],
+            # Carried through so a converted row can fall back to it below
+            # (see performance.report) and so the Action Center can show the
+            # same true multiplicand the opportunity card does.
+            "basket_value": opp.get("basket_value"),
+            "probability": opp.get("probability"),
             "influenced_value": opp.get("influenced_value"),
             "incremental_value": opp.get("incremental_value"),
             "priority": opp["priority"],

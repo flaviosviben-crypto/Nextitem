@@ -258,6 +258,12 @@ def list_opportunities(opportunity_type: str = "", limit: int = 8) -> str:
         "headline": o["headline"], "why_now": o["why_now"],
         "product": (o.get("product") or {}).get("name"),
         "match_pct": (o.get("product") or {}).get("match_pct"),
+        # The actual multiplicands behind influenced_value_eur. match_pct is a
+        # different number (raw product-match score) and must not be read as
+        # the probability used here — expose the real ones so the math can be
+        # explained correctly instead of reconstructed from adjacent fields.
+        "basket_value_eur": o.get("basket_value"),
+        "probability": o.get("probability"),
         "influenced_value_eur": o.get("influenced_value"),
         "incremental_value_eur": o.get("incremental_value"),
         "value_basis": o.get("value_basis"),

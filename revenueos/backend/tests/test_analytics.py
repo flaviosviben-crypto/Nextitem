@@ -356,6 +356,56 @@ def test_incremental_value_is_below_influenced_value():
             assert o["incremental_value"] <= o["influenced_value"]
 
 
+def test_influenced_value_equals_basket_times_probability_exactly():
+    """Pins the only arithmetic allowed to explain "Expected value" on screen.
+
+    A card shows the recommended product's price and its match % right next
+    to this figure, which invites reading it as price × match % — that is a
+    different, wrong number. The true inputs are basket_value and
+    probability, which is what this test locks down.
+    """
+    profile = {"avg_order_value": 610, "order_count": 3}
+    match = {"price": 986, "score": 0.35}
+    probability = opportunities._probability("cross_sell", profile, match)
+    basket = opportunities._basket(profile, match)
+    influenced = round(basket * probability, 2)
+
+    assert basket == 798.0
+    assert probability == 0.15
+    assert influenced == 119.7
+    assert round(match["price"] * match["score"], 2) != influenced
+
+
+def test_influenced_value_reconciles_across_every_detected_opportunity():
+    """Same reconciliation as above, exercised through the full engine so a
+    change to _for_customer's wiring — not just the two helpers — is caught."""
+    profiles, products, txs = _opportunity_fixture()
+    found = opportunities.detect(profiles, products, txs, TODAY)
+    priced = [o for o in found if o["basket_value"] is not None]
+    assert priced, "fixture must produce at least one priced opportunity"
+    for o in priced:
+        assert o["influenced_value"] == round(o["basket_value"] * o["probability"], 2)
+        if o.get("product"):
+            # The number a reader could otherwise (wrongly) reconstruct from
+            # what the card shows beside "Expected value" must not coincide.
+            naive = round(o["product"]["price"] * (o["product"]["match_pct"] / 100), 2)
+            assert naive != o["influenced_value"] or o["basket_value"] == o["product"]["price"]
+
+
+def test_action_center_row_carries_the_same_basket_value_as_the_card():
+    """The Action Center is a second screen for the same opportunity; it must
+    expose the same true multiplicand, not just the already-discounted total —
+    otherwise a row that lacks a recorded sale can't fall back to it (see
+    performance.report, which relies on this field)."""
+    profiles, products, txs = _opportunity_fixture()
+    found = opportunities.detect(profiles, products, txs, TODAY)
+    rows = {r["id"]: r for r in opportunities.pipeline_defaults(found)}
+    for o in found:
+        row = rows[o["id"]]
+        assert row["basket_value"] == o["basket_value"]
+        assert row["probability"] == o["probability"]
+
+
 def test_lifecycle_alone_does_not_decide_priority():
     """A lapsed VIP must be able to outrank an active nobody."""
     vip = {"customer_id": "VIP", "name": "Vip", "value_tier": "VIP", "value_percentile": 0.97,
@@ -459,3 +509,25 @@ def test_expected_value_reported_is_todays_list_only():
     pipeline = [_row("P0", prioritized=True), _row("P1", prioritized=True), _row("H0")]
     report = perf.report(pipeline, [], as_of=TODAY)
     assert report["prioritized_expected_value"] == 200.0
+
+
+def test_incremental_estimate_falls_back_to_basket_value_not_the_discounted_total():
+    """A converted opportunity with no recorded sale value falls back to what
+    the card said the basket was worth — not to influenced_value, which has
+    already been discounted by the pre-sale probability of a response at all.
+    Once a sale is confirmed, discounting it a second time understates the
+    estimate. (This also pins that pipeline_defaults actually carries
+    basket_value through, since the fallback silently does nothing without it.)
+    """
+    from app.analytics import performance as perf
+
+    row = {
+        "id": "P0", "customer_id": "P0", "status": "Converted",
+        "prioritized_today": True, "trigger": "due",
+        "created_at": TODAY.isoformat(), "updated_at": TODAY.isoformat(),
+        "basket_value": 800.0, "influenced_value": 120.0, "realised_value": None,
+    }
+    report = perf.report([row], [], as_of=TODAY)
+    share = opportunities.INCREMENTALITY["due"]
+    assert report["estimated_incremental_revenue"] == round(800.0 * share, 2)
+    assert report["estimated_incremental_revenue"] != round(120.0 * share, 2)

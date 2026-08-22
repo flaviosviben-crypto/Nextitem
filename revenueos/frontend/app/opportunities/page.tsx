@@ -34,6 +34,7 @@ import {
 import {
   EXPECTED_VALUE,
   EXPECTED_VALUE_HELP,
+  expectedValueBreakdown,
   lifecycleColor,
   matchColor,
   money,
@@ -373,6 +374,15 @@ function OpportunityCard({
             {opp.value_basis.charAt(0).toLowerCase() + opp.value_basis.slice(1)}.
           </p>
           <p className="text-[var(--ink-3)]">{opp.probability_basis}.</p>
+          {/* The product panel beside this card shows price and match % —
+              neither is an input to the formula above, so multiplying those
+              two will not reproduce the expected value. This is the actual
+              basket value and probability the number was built from. */}
+          {expectedValueBreakdown(opp.basket_value, opp.probability, opp.influenced_value) && (
+            <p className="num text-[var(--ink)]">
+              {expectedValueBreakdown(opp.basket_value, opp.probability, opp.influenced_value)}
+            </p>
+          )}
           {opp.eligibility.channels.length > 0 && (
             <p>
               <span className="text-[var(--ink-3)]">Permitted channels: </span>
