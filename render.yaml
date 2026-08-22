@@ -1,0 +1,98 @@
+# RevenueOS deployment blueprint.
+#
+# Render reads this file from the repo root and creates both services. The whole
+# deployment lives here rather than in a dashboard, so it can be reviewed in a
+# diff and recreated from scratch by pointing Render at this repo again.
+#
+# Architecture note that explains the shape of this file: the browser only ever
+# calls /api on the frontend's own origin. next.config.mjs rewrites that to the
+# backend server-side. So the frontend is the public product, the API is a
+# dependency of it, and BACKEND_HOST below is the only wire between them.
+services:
+  # ----------------------------------------------------------------- API ---
+  - type: web
+    name: revenueos-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: revenueos/backend
+    branch: claude/startup-code-review-phxm28
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    # Render assigns the port at runtime; binding to a fixed 8000 would make the
+    # service unreachable and the health check would never pass.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    # Which changes trigger a rebuild. rootDir only says *where* the build runs;
+    # without this, every push to the branch redeploys both services, so a
+    # frontend-only commit restarted the API and produced a 502 while it came
+    # back up. Paths are relative to the repository root.
+    buildFilter:
+      paths:
+        - revenueos/backend/**
+        - render.yaml
+      ignoredPaths:
+        # Never executed by the build or the running service.
+        - revenueos/backend/tests/**
+        - revenueos/backend/storage/**
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # The free plan has no persistent disk, so the workspace snapshot does not
+      # survive a restart. Seeding the demo keeps the public URL demonstrable
+      # instead of showing an empty state after every deploy.
+      - key: SEED_DEMO_ON_EMPTY
+        value: "true"
+      # Optional. Only needed if something calls the API from another origin
+      # directly — the frontend does not, it proxies server-side.
+      - key: CORS_ORIGINS
+        sync: false
+      # Optional. Enables the conversational analyst; every other surface works
+      # without it. Set it in the Render dashboard, never in this file.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  # ------------------------------------------------------------ frontend ---
+  - type: web
+    name: revenueos-web
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: revenueos/frontend
+    branch: claude/startup-code-review-phxm28
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    # Same reasoning in reverse: a backend-only commit should not rebuild the
+    # web service. render.yaml appears in both filters on purpose — a change to
+    # shared deployment config legitimately affects both.
+    buildFilter:
+      paths:
+        - revenueos/frontend/**
+        - render.yaml
+      ignoredPaths:
+        # Node test files; `npm run build` does not read them.
+        - revenueos/frontend/scripts/**
+    envVars:
+      - key: NODE_VERSION
+        value: "20.11.1"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # Render resolves this to the API service's SLUG, not a domain: a name
+      # like "revenueos-api-6bxb", carrying the suffix Render adds when a name
+      # is taken. It is not usable as a URL on its own — prefixing it with
+      # https:// produces a dotless address that resolves nowhere, which is
+      # exactly how this deployment first broke. The proxy completes it to
+      # <slug>.onrender.com, so nothing here needs pasting or syncing.
+      - key: BACKEND_HOST
+        fromService:
+          type: web
+          name: revenueos-api
+          property: host
+      # Escape hatch, normally unset. An absolute origin here is used verbatim
+      # and outranks BACKEND_HOST — including an internal address such as
+      # http://revenueos-api-6bxb:10000 if you later put both services on a
+      # paid plan and want traffic to stay on Render's private network.
+      - key: BACKEND_ORIGIN
+        sync: false

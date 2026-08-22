@@ -1,0 +1,255 @@
+# Deploying RevenueOS
+
+GitHub → Render → a permanent public URL, updating on every push.
+
+The whole deployment is described by [`render.yaml`](../render.yaml) at the repo
+root. Nothing lives only in a dashboard, so this can be recreated from scratch
+by pointing Render at the repository again.
+
+---
+
+## Why this architecture
+
+`frontend/lib/api.ts` calls `/api` on **its own origin**. A server-side proxy
+(`frontend/app/api/[...path]/route.ts`) forwards that to the API. Three things
+follow, and they shape everything else:
+
+- The browser never talks to the API directly, so production needs **no CORS**
+  and **no API URL in the client bundle**.
+- The frontend is the public product; the API is a dependency of it.
+- The only wire between them is one environment variable, `BACKEND_HOST`, which
+  Render fills in automatically from the API service. There is no URL to paste
+  and no way to leave production pointing at localhost.
+
+**Why Render rather than Vercel or Railway.** Vercel cannot host FastAPI, so it
+would still need a second platform underneath — two dashboards for no gain.
+Railway has no repo-level blueprint covering two services in one monorepo, so
+its setup would live in a dashboard instead of in Git. Render's Blueprint
+creates both services, wires them together and enables auto-deploy from one
+file, which is the least ongoing manual work for this specific repository.
+
+**How the two services are wired, and the trap in it.** Render's
+`fromService` with `property: host` returns the service's **slug** — a name like
+`revenueos-api-6bxb`, carrying the suffix Render adds when a name is already
+taken. It is *not* a domain. Prefixing it with `https://` produces
+`https://revenueos-api-6bxb`, which has no DNS record anywhere, and every
+request fails to connect. That is how this deployment first broke.
+
+The public address is that slug under `onrender.com` — the same relationship
+the frontend shows, where slug `revenueos-web` is served at
+`revenueos-web.onrender.com`. `lib/backend.ts` completes a dotless value
+accordingly and leaves a real domain untouched, so `BACKEND_HOST` needs no
+manual value. `frontend/scripts/resolve-backend.test.mjs` pins this, with the
+exact production value as its first case.
+
+If you ever need something else — an internal address such as
+`http://revenueos-api-6bxb:10000` once both services are on a paid plan and can
+use Render's private network — set `BACKEND_ORIGIN` in the frontend service. It
+is used verbatim and outranks everything.
+
+**Why a route handler instead of a `next.config` rewrite.** Next.js compiles
+rewrite destinations into `routes-manifest.json` at *build* time. A build that
+runs without the platform's variable set bakes in `localhost`, and no amount of
+restarting or reconfiguring will fix it — only a rebuild. The route handler
+reads the environment per request, so the deployed site always points where the
+platform says.
+
+---
+
+## Services
+
+| | Frontend | API |
+|---|---|---|
+| Render name | `revenueos-web` | `revenueos-api` |
+| Runtime | Node 20 | Python 3.11 |
+| Root directory | `revenueos/frontend` | `revenueos/backend` |
+| Build | `npm ci && npm run build` | `pip install -r requirements.txt` |
+| Start | `npm start` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Health check | `/` | `/api/health` |
+| Public? | Yes — this is the URL you share | Yes on the free plan, but nothing needs to call it directly |
+
+Both bind to the `$PORT` Render assigns. A hardcoded port would make the health
+check fail and the deploy roll back.
+
+---
+
+## First-time setup
+
+1. Sign in at <https://dashboard.render.com> with GitHub.
+2. **New → Blueprint**, pick this repository, branch
+   `claude/startup-code-review-phxm28`.
+3. Render reads `render.yaml` and shows both services. It will ask for the two
+   values marked `sync: false` — both are optional, leave them blank:
+   - `ANTHROPIC_API_KEY` — only enables the conversational analyst.
+   - `CORS_ORIGINS` — only needed if something calls the API from another origin.
+4. **Apply**. First build takes roughly 5–10 minutes.
+
+You get two permanent URLs, `https://revenueos-web.onrender.com` and
+`https://revenueos-api.onrender.com` (Render appends a suffix if a name is
+taken; `BACKEND_HOST` resolves to the real one either way).
+
+---
+
+## Verifying a deployment
+
+Do not trust a `200`. This app has already been broken once by a stale server
+answering every health check happily while serving the previous build. Check
+what comes back, not whether something comes back:
+
+```bash
+./revenueos/scripts/verify-deployment.sh https://revenueos-web.onrender.com
+```
+
+If a check fails with a 502, the body names the origin that was tried and which
+variable it came from, so a wiring fault is readable without opening the logs.
+
+Thirteen assertions on content: opportunities are per-customer and every one names
+a customer, a reason and an action; the Action Center exposes the five workflow
+states; Performance keeps modelled figures labelled as modelled; no `undefined`
+counts.
+
+One check reconciles *across* screens: Overview, Opportunities, Action Center and
+Performance must report the same detected and prioritized counts. That is the
+ambiguity — "do I have 228 opportunities or 20?" — the vocabulary was introduced
+to remove, and it is a relationship no single endpoint can prove on its own.
+
+Every check is issued against the **frontend** origin, so passing also proves the
+proxy reaches the API.
+
+Allow ~60s on the first run after idling — see cold starts below.
+
+### When a screen is blank
+
+Open **`/api/diag`** on the frontend:
+
+```
+https://revenueos-web.onrender.com/api/diag
+```
+
+It answers the three questions a blank page cannot distinguish between:
+
+| Field | What it tells you |
+|---|---|
+| `commit` | Which build is actually live. A stale build is indistinguishable from a broken one from the outside. |
+| `backend_origin` / `backend_resolved_from` | Where this service thinks the API is, and which variable said so. |
+| `api.reachable` / `api.status` / `api.took_ms` | Whether the API answered, and how long it took. A cold start shows `reachable: true` with `took_ms` around 60000. |
+| `api.loaded` | Whether the API has a dataset. `false` means it is up but empty. |
+
+The endpoint runs inside the frontend service, so it works even when the API is
+down — which is exactly when it is needed.
+
+**`api.status: 502` returned in milliseconds** means the API service is deployed
+but nothing is listening: it crashed, failed to deploy, or is suspended. That is
+not a cold start — a sleeping service answers slowly and then succeeds. Check the
+API service's **Logs** and **Events** tabs in the Render dashboard.
+
+### Why the API starts the way it does
+
+A platform waits a fixed window for the service to open its port, then health
+checks it. Two things used to be spent inside that window, and a deploy that
+overran it was marked failed and served as a gateway error:
+
+| Cost | Fix |
+|---|---|
+| Rebuilding the analytics pipeline in uvicorn's startup event, which serves no request until it returns | Runs on a thread; the server listens immediately |
+| Importing the Anthropic SDK at boot — the largest import in the tree, for an optional feature not in the navigation | Imported on demand, inside the handlers that use it |
+
+Together those took cold start from 1.27s to 0.64s to an answering health check
+on a developer machine; the throttled free instance that failed was roughly
+fifteen times slower.
+
+Two tests hold the line: one asserts the startup event returns in under a second
+however slow the data load is, the other that importing the app does not pull in
+the SDK.
+
+`api.status: "loading"` means the service is up and rebuilding its analytics
+behind the running server. The API starts listening immediately and loads data
+on a thread, because uvicorn serves nothing — not even the health check — until
+the startup event returns, and a pipeline that takes seconds on a laptop takes
+far longer on a throttled free instance. Doing it inline risks the platform's
+health check timing out and marking a healthy deploy as failed.
+
+`api.startup_error` names a failure that happened while loading data. The API
+records those rather than raising, so a bad snapshot or a failed seed leaves an
+empty but running service that can explain itself, instead of a dead one behind
+a gateway error.
+
+---
+
+## Environment variables to maintain
+
+| Variable | Service | Set by | Needed? |
+|---|---|---|---|
+| `BACKEND_HOST` | frontend | Render, automatically | Never touch it — it is a slug, and the proxy completes it |
+| `BACKEND_ORIGIN` | frontend | You, only if overriding | Optional — a full origin, used verbatim |
+| `PORT` | both | Render, automatically | Never touch it |
+| `NODE_VERSION` / `PYTHON_VERSION` | frontend / API | `render.yaml` | Only to change runtime version |
+| `SEED_DEMO_ON_EMPTY` | API | `render.yaml`, `true` | Set to `false` once real data is imported |
+| `ANTHROPIC_API_KEY` | API | You, in the dashboard | Optional — only the AI Analyst needs it |
+| `CORS_ORIGINS` | API | You, in the dashboard | Optional — the frontend does not need it |
+
+Secrets are never committed: `.env` and `.env.local` are gitignored, and
+`render.yaml` marks both secret-ish variables `sync: false` so their values live
+only in Render.
+
+---
+
+## Which service a change redeploys
+
+`rootDir` says *where* a build runs, not *which* changes trigger one. Without a
+build filter every push to the branch redeployed both services, so a
+frontend-only commit restarted the API and the site showed a 502 until it came
+back. Each service now declares the paths it cares about, relative to the repo
+root:
+
+| Changed path | Rebuilds |
+|---|---|
+| `revenueos/frontend/**` | web |
+| `revenueos/backend/**` | api |
+| `render.yaml` | both — shared deployment config |
+| `revenueos/backend/tests/**` | neither — never run by the build or the service |
+| `revenueos/frontend/scripts/**` | neither — `npm run build` does not read them |
+| Documentation, `dev.sh`, `scripts/**` | neither |
+
+## What happens when you push
+
+Push to `claude/startup-code-review-phxm28` → Render receives the webhook →
+rebuilds both services → runs the health checks → swaps traffic to the new
+version. A service whose health check fails keeps serving the previous version
+rather than going down.
+
+To deploy from `main` instead, merge the branch and change both `branch:` lines
+in `render.yaml`.
+
+---
+
+## Surviving an API restart
+
+A deploy or a wake-from-idle takes the API away for a few seconds, and the
+platform answers 502 meanwhile. The API client retries a read up to three times
+with a 400ms then 1000ms backoff, keeping the loading state, so a routine
+restart no longer lands the user on an error screen. After that the failure is
+shown for what it is, with **Try again** still available.
+
+Writes are never retried. Replaying a decision or an upload after a gateway
+error risks applying it twice, since the first attempt may have reached the
+server before the connection broke. The policy lives in `frontend/lib/retry.ts`
+and is covered by tests.
+
+## Limits worth knowing
+
+- **Cold starts.** Free services sleep after 15 minutes idle. The first request
+  wakes the frontend, whose first API call wakes the API — up to ~90s for that
+  one request, then normal. $7/month per service removes this.
+- **The workspace resets on deploy.** The free plan has no persistent disk, so
+  the snapshot in `backend/storage/` is lost on every restart. That is why
+  `SEED_DEMO_ON_EMPTY=true` is set: the public URL always has the demo boutique
+  rather than an empty shell. **Uploaded data does not survive a redeploy.** For
+  real pilot data, add a Render persistent disk mounted at
+  `revenueos/backend/storage` (paid) or move to Postgres — see the README's
+  production next steps.
+- **There is no authentication.** Anyone with the URL sees everything, and the
+  API is publicly reachable on its own hostname. Fine for the synthetic demo;
+  **do not upload a real customer list to this deployment** until auth is added.
+- **Free plan quota:** 750 instance-hours/month across the account. Two sleeping
+  services stay within it comfortably.
