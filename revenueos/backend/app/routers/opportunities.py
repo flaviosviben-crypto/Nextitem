@@ -124,13 +124,18 @@ def opportunity_detail(opportunity_id: str) -> dict[str, Any]:
 
 
 @router.get("/actions")
-def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
+def action_center(status: str = "", scope: str = "all", store: str = "") -> dict[str, Any]:
     """Everything an advisor has decided on, and everything still waiting."""
-    # Scope first, then status. The status tiles count within the chosen scope,
-    # or the screen would show "Awaiting decision 102" directly beside a chip
-    # reading "Today's list · 20" and contradict itself.
+    # Scope first, then store, then status. The status tiles count within
+    # whatever the advisor has narrowed down to, or the screen would show
+    # "Awaiting decision 102" directly beside a chip reading "Today's list ·
+    # 20" and contradict itself.
     scoped = ([r for r in workspace.pipeline if r.get("prioritized_today")]
               if scope == "today" else workspace.pipeline)
+    # Store is a real relationship already on the row (the customer's own CRM
+    # or transaction-derived store) — never assigned here, only filtered on.
+    if store:
+        scoped = [r for r in scoped if (r.get("store") or "") == store]
     rows = [r for r in scoped if r.get("status") == status] if status else scoped
 
     by_status = {s: sum(1 for r in scoped if r.get("status") == s)
@@ -165,6 +170,10 @@ def action_center(status: str = "", scope: str = "all") -> dict[str, Any]:
         "total": len(rows),
         "statuses": PIPELINE_STATES,
         "scope": scope,
+        "store": store,
+        # Only stores actually present on a pipeline row — never a store this
+        # boutique's data does not actually have.
+        "stores": sorted({r["store"] for r in workspace.pipeline if r.get("store")}),
         "open": sum(1 for r in scoped if r.get("status") in OPEN_STATES),
         "closed": sum(1 for r in scoped if r.get("status") in CLOSED_STATES),
         "converted_value": round(
@@ -203,6 +212,15 @@ def update_action(row_id: str, payload: ActionUpdate) -> dict[str, Any]:
     if not row:
         raise HTTPException(404, "Action not found.")
 
+    # What this row actually said before this request touched it, so a request
+    # that changes nothing can be told apart from one that does — a retry or a
+    # resubmit of the same decision must not write a second identical event
+    # onto the activity history.
+    prior_status = row.get("status")
+    prior_note = row.get("note")
+    prior_realised_value = row.get("realised_value")
+    prior_decline_reason = row.get("decline_reason")
+
     # Approving an outreach is a human decision, and it is recorded as one: no
     # message reaches a customer without a name and a timestamp against it.
     row["status"] = payload.status
@@ -222,13 +240,23 @@ def update_action(row_id: str, payload: ActionUpdate) -> dict[str, Any]:
         row["note"] = payload.note
     if payload.realised_value is not None:
         row["realised_value"] = payload.realised_value
-    row["updated_at"] = datetime.utcnow().isoformat(timespec="seconds")
-    audit_note = payload.note
-    if payload.status == "Ignored":
-        audit_note = " · ".join(
-            p for p in (DECLINE_REASONS[payload.reason], payload.reason_note, payload.note) if p)
-    workspace.audit(row_id, payload.status, audit_note)
-    workspace.refresh_performance()
+
+    changed = (
+        payload.status != prior_status
+        or (payload.note is not None and payload.note != prior_note)
+        or (payload.realised_value is not None and payload.realised_value != prior_realised_value)
+        or (payload.status == "Ignored" and payload.reason != prior_decline_reason)
+    )
+    if changed:
+        row["updated_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        audit_note = payload.note
+        if payload.status == "Ignored":
+            audit_note = " · ".join(
+                p for p in (DECLINE_REASONS[payload.reason], payload.reason_note, payload.note) if p)
+        workspace.audit(row_id, payload.status, audit_note,
+                        customer_id=row.get("customer_id"), store=row.get("store"),
+                        advisor=row.get("advisor"))
+        workspace.refresh_performance()
     workspace.save()
     return row
 

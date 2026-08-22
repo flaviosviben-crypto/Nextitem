@@ -226,6 +226,8 @@ def _profile_one(rec: dict[str, Any], txs: list[dict[str, Any]], as_of: date) ->
         "city": rec.get("city"),
         "country": rec.get("country"),
         "store": rec.get("store") or _mode([t.get("store") for t in txs]),
+        # No CRM field for this — it only ever comes from who rang up the sale.
+        "advisor": _mode([t.get("advisor") for t in txs]),
         "gender": rec.get("gender"),
         "phone": rec.get("phone"),
         "marketing_consent": rec.get("marketing_consent"),

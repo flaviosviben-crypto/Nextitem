@@ -297,6 +297,44 @@ export default function CustomerDetailPage() {
               />
             </dl>
           </Card>
+
+          <Card>
+            <SectionTitle
+              title="Activity history"
+              hint="Every step this customer's recommendations have been through."
+            />
+            {detail.data.activity.length === 0 ? (
+              <p className="text-[13px] text-[var(--ink-3)]">
+                No recommendation has been made for this customer yet.
+              </p>
+            ) : (
+              <ul className="max-h-[420px] space-y-3 overflow-auto">
+                {detail.data.activity.map((event) => (
+                  <li
+                    key={event.id}
+                    className="border-b border-[var(--line)] pb-3 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[13px] font-medium">{event.label}</span>
+                      <span className="num text-[11px] text-[var(--ink-3)]">
+                        {shortDate(event.at)}
+                      </span>
+                    </div>
+                    {(event.advisor || event.store) && (
+                      <div className="mt-0.5 text-[11.5px] text-[var(--ink-3)]">
+                        {[event.advisor, event.store].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                    {event.note && (
+                      <div className="mt-1 text-[12px] leading-snug text-[var(--ink-2)]">
+                        {event.note}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
       </div>
     </Page>

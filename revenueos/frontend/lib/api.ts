@@ -355,6 +355,10 @@ export type ActionRow = {
   customer_name: string;
   value_tier: ValueTier | null;
   lifecycle: Lifecycle | null;
+  /** The customer's own store — from their CRM record or, failing that, the
+   *  store their transactions were rung up in. Null when neither is on file. */
+  store: string | null;
+  advisor: string | null;
   trigger: string;
   reason: string;
   product: string | null;
@@ -400,6 +404,11 @@ export type ActionCenter = {
   detected: number;
   total: number;
   statuses: string[];
+  /** The store this screen is narrowed to, or "" for every store. */
+  store: string;
+  /** Real stores present on today's rows — never a store this boutique's data
+   *  does not actually have. */
+  stores: string[];
   open: number;
   closed: number;
   converted_value: number;
@@ -536,9 +545,26 @@ export type Match = {
   expected_value?: number | null;
 };
 
+/** One persisted step in an opportunity's life, newest first — written once,
+ *  when it happened, and never rewritten by a later recompute. */
+export type ActivityEvent = {
+  id: string;
+  opportunity_id: string | null;
+  /** The stored pipeline status ("Approved", "Ignored", ...), or
+   *  "Recommended" for the event every opportunity starts with. */
+  status: string;
+  /** The same wording Action Center's own status control uses. */
+  label: string;
+  at: string;
+  advisor: string | null;
+  store: string | null;
+  note: string | null;
+};
+
 export type CustomerDetail = {
   profile: Record<string, any>;
   product_matching_available: boolean;
+  activity: ActivityEvent[];
   why_contact: {
     headline: string;
     why_now: string | null;

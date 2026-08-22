@@ -490,6 +490,10 @@ def _for_customer(profile: dict[str, Any], products: list[dict[str, Any]],
         "value_tier": profile.get("value_tier"),
         "lifecycle": profile.get("lifecycle"),
         "segment": profile.get("segment"),
+        # Real relationships already in the data model — a CRM/transaction
+        # store and the transactions' own advisor mode — never assigned here.
+        "store": profile.get("store"),
+        "advisor": profile.get("advisor"),
 
         "trigger": trigger["kind"],
         "headline": trigger["headline"],
@@ -717,6 +721,8 @@ def pipeline_defaults(opportunities: list[dict[str, Any]]) -> list[dict[str, Any
             "customer_name": opp["customer_name"],
             "value_tier": opp.get("value_tier"),
             "lifecycle": opp.get("lifecycle"),
+            "store": opp.get("store"),
+            "advisor": opp.get("advisor"),
             "trigger": opp["trigger"],
             "reason": opp["why_now"],
             "prioritized_today": prioritized,

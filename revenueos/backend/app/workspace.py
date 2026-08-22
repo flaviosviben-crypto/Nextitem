@@ -261,7 +261,17 @@ class Workspace:
             self.products = products
             self.opportunities = opps
             self.quality = quality.to_dict()
+            # Captured before the merge, so only opportunities genuinely new to
+            # this workspace — never one recomputed for the hundredth time —
+            # get a "Recommended" event. This is what the activity history's
+            # first entry is built from.
+            previously_known_ids = {r["id"] for r in self.pipeline}
             self.pipeline = _merge_pipeline(self.pipeline, opp_engine.pipeline_defaults(opps))
+            for row in self.pipeline:
+                if row["id"] not in previously_known_ids:
+                    self.audit(row["id"], "Recommended", row.get("reason"), actor="system",
+                              customer_id=row.get("customer_id"), store=row.get("store"),
+                              advisor=row.get("advisor"))
             self.performance = performance.report(self.pipeline, transactions, as_of=self.as_of)
             self.summary = {
                 "source": self.source,
@@ -298,14 +308,25 @@ class Workspace:
             self.performance = performance.report(self.pipeline, self.transactions_raw, as_of=self.as_of)
 
     def audit(self, row_id: str, status: str, note: str | None = None,
-              actor: str = "advisor") -> None:
+              actor: str = "advisor", customer_id: str | None = None,
+              store: str | None = None, advisor: str | None = None) -> None:
+        """Append one persisted event. Never rewritten, never removed on recompute.
+
+        ``customer_id``/``store``/``advisor`` are snapshotted at write time —
+        the real relationships this row carried the moment the event happened —
+        so a later recompute (a corrected store, a faded opportunity) can never
+        rewrite what the activity history already shows.
+        """
         with self._lock:
             self.audit_log.insert(0, {
                 "at": datetime.utcnow().isoformat(timespec="seconds"),
                 "action_id": row_id,
+                "customer_id": customer_id,
                 "status": status,
                 "note": note,
                 "actor": actor,
+                "store": store,
+                "advisor": advisor,
             })
             self.audit_log = self.audit_log[:2000]
 

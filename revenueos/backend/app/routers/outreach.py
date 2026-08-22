@@ -125,7 +125,9 @@ def mark_contacted(row_id: str, payload: ContactRecord) -> dict[str, Any]:
         row["outreach_message"] = payload.message[:4000]
 
     workspace.audit(row_id, "Contacted",
-                    payload.note or f"Contacted via {payload.channel}")
+                    payload.note or f"Contacted via {payload.channel}",
+                    customer_id=row.get("customer_id"), store=row.get("store"),
+                    advisor=row.get("advisor"))
     workspace.refresh_performance()
     workspace.save()
     return row

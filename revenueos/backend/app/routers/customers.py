@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..analytics import matching, segmentation
+from ..analytics import activity, matching, segmentation
 from ..workspace import workspace
 
 router = APIRouter(tags=["customers"])
@@ -165,6 +165,10 @@ def customer_detail(customer_id: str) -> dict[str, Any]:
         "recommendations": [{
             **m, "expected_value": matching.expected_value(m, profile),
         } for m in matches],
+        # A simple chronological record of the RevenueOS workflow itself —
+        # separate from the purchase timeline below, which is what the customer
+        # bought, not what an advisor did about it.
+        "activity": activity.customer_activity(customer_id, workspace.audit_log),
         "timeline": [{
             "date": str(t.get("date")) if t.get("date") else None,
             "transaction_id": t.get("transaction_id"),

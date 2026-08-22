@@ -67,9 +67,13 @@ export default function ActionsPage() {
   // until a reason is chosen — the API requires one, and asking here keeps the
   // two ways of setting something aside consistent.
   const [declining, setDeclining] = useState<string | null>(null);
+  // Store is a real relationship on the row (the customer's own CRM or
+  // transaction-derived store) — filtering by it narrows the whole screen,
+  // the same way the status tiles already narrow by scope.
+  const [store, setStore] = useState("");
   const { data, loading, error, refresh, setData } = useApi<ActionCenter>(
-    `/actions?status=${encodeURIComponent(status)}&scope=${scope}`,
-    [status, scope],
+    `/actions?status=${encodeURIComponent(status)}&scope=${scope}&store=${encodeURIComponent(store)}`,
+    [status, scope, store],
   );
 
   const update = async (row: ActionRow, next: string, decline?: Decline) => {
@@ -111,6 +115,18 @@ export default function ActionsPage() {
           <FilterChip active={scope === "all"} onClick={() => setScope("all")}>
             All detected · {data.detected}
           </FilterChip>
+          {data.stores.length > 0 && (
+            <select
+              value={store}
+              onChange={(e) => setStore(e.target.value)}
+              className={`${inputClass} w-auto py-1 text-[12px]`}
+            >
+              <option value="">All stores</option>
+              {data.stores.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          )}
           <span className="ml-1 text-[12px] text-[var(--muted)]">
             {data.awaiting_decision} of today&apos;s recommendations still awaiting a decision ·{" "}
             {data.detected_not_prioritized} detected but not prioritized for today
@@ -207,6 +223,9 @@ export default function ActionsPage() {
                               <Badge color={lifecycleColor(row.lifecycle)}>{row.lifecycle}</Badge>
                             )}
                           </div>
+                          {row.store && (
+                            <div className="mt-1 text-[11px] text-[var(--ink-3)]">{row.store}</div>
+                          )}
                         </Td>
                         <Td wrap>
                           <span className="text-[var(--ink-3)]">{triggerLabel(row.trigger)}</span>
